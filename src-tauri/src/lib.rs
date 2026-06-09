@@ -14,6 +14,17 @@ struct KickChannelPayload {
     viewers: Option<u64>,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LatestReleasePayload {
+    current_version: String,
+    latest_version: String,
+    tag_name: String,
+    name: Option<String>,
+    html_url: String,
+    installer_url: Option<String>,
+}
+
 #[tauri::command]
 async fn fetch_kick_channel(slug: String) -> Result<KickChannelPayload, String> {
     let slug = normalize_slug(&slug)?;
@@ -44,6 +55,50 @@ async fn fetch_kick_channel(slug: String) -> Result<KickChannelPayload, String> 
         .map_err(|error| format!("Resposta invalida da Kick: {error}"))?;
 
     Ok(map_kick_channel(slug, &json))
+}
+
+#[tauri::command]
+fn app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
+#[tauri::command]
+async fn fetch_latest_release() -> Result<LatestReleasePayload, String> {
+    let client = reqwest::Client::new();
+    let response = client
+        .get("https://api.github.com/repos/athilalexandre/kickerino/releases/latest")
+        .header(USER_AGENT, "Kickerino/0.1")
+        .header(ACCEPT, "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|error| format!("Falha ao consultar GitHub: {error}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "GitHub respondeu com status {} ao buscar atualizacoes",
+            response.status()
+        ));
+    }
+
+    let json: Value = response
+        .json()
+        .await
+        .map_err(|error| format!("Resposta invalida do GitHub: {error}"))?;
+    let tag_name =
+        first_string(&json, &["tag_name"]).ok_or("Release sem tag_name no GitHub")?;
+    let html_url =
+        first_string(&json, &["html_url"]).ok_or("Release sem html_url no GitHub")?;
+    let latest_version = tag_name.trim_start_matches('v').to_string();
+    let installer_url = latest_installer_url(&json);
+
+    Ok(LatestReleasePayload {
+        current_version: app_version(),
+        latest_version,
+        tag_name,
+        name: first_string(&json, &["name"]),
+        html_url,
+        installer_url,
+    })
 }
 
 fn normalize_slug(value: &str) -> Result<String, String> {
@@ -114,11 +169,31 @@ fn first_u64(json: &Value, keys: &[&str]) -> Option<u64> {
         .next()
 }
 
+fn latest_installer_url(json: &Value) -> Option<String> {
+    let assets = json.get("assets")?.as_array()?;
+    ["setup.exe", ".exe", ".msi"].iter().find_map(|suffix| {
+        assets.iter().find_map(|asset| {
+            let name = first_string(asset, &["name"])?.to_lowercase();
+            let url = first_string(asset, &["browser_download_url"])?;
+
+            if name.ends_with(suffix) {
+                Some(url)
+            } else {
+                None
+            }
+        })
+    })
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
-        .invoke_handler(tauri::generate_handler![fetch_kick_channel])
+        .invoke_handler(tauri::generate_handler![
+            app_version,
+            fetch_kick_channel,
+            fetch_latest_release
+        ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o Kickerino");
 }

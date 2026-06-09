@@ -1,4 +1,4 @@
-import { Settings, Wifi } from "lucide-react";
+import { Download, RefreshCcw, Settings, Wifi } from "lucide-react";
 import { useMemo, useState } from "react";
 import { ChannelCard } from "../components/ChannelCard";
 import { ChannelList } from "../components/ChannelList";
@@ -7,10 +7,22 @@ import { SettingsPanel } from "../components/SettingsPanel";
 import { useChannels } from "../hooks/useChannels";
 import { useLiveMonitor } from "../hooks/useLiveMonitor";
 import { useSettings } from "../hooks/useSettings";
+import {
+  checkForUpdates,
+  openReleaseDownload,
+  type LatestRelease,
+} from "../services/updates";
+
+type UpdateState = {
+  status: "idle" | "checking" | "current" | "available" | "error";
+  message?: string;
+  release?: LatestRelease;
+};
 
 export function App() {
   const [selectedSlug, setSelectedSlug] = useState("all");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [updateState, setUpdateState] = useState<UpdateState>({ status: "idle" });
   const { settings, setSettings } = useSettings();
   const { channels, sortedChannels, setChannels, addChannel, removeChannel } =
     useChannels();
@@ -35,6 +47,37 @@ export function App() {
     }
   }
 
+  async function handleCheckUpdates() {
+    setUpdateState({ status: "checking", message: "Checando atualizacoes..." });
+
+    try {
+      const release = await checkForUpdates();
+
+      if (release.hasUpdate) {
+        setUpdateState({
+          status: "available",
+          release,
+          message: `Nova versao ${release.latestVersion} disponivel. Voce esta na ${release.currentVersion}.`,
+        });
+        return;
+      }
+
+      setUpdateState({
+        status: "current",
+        release,
+        message: `Kickerino ja esta atualizado na versao ${release.currentVersion}.`,
+      });
+    } catch (error) {
+      setUpdateState({
+        status: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Nao foi possivel checar atualizacoes agora.",
+      });
+    }
+  }
+
   return (
     <main className="shell">
       <header className="topbar">
@@ -48,15 +91,30 @@ export function App() {
           </div>
         </div>
 
-        <button
-          className={`settings-button ${settingsOpen ? "settings-button--active" : ""}`}
-          type="button"
-          title="Configuracoes"
-          aria-label="Configuracoes"
-          onClick={() => setSettingsOpen((current) => !current)}
-        >
-          <Settings size={19} />
-        </button>
+        <div className="topbar-actions">
+          <button
+            className={`settings-button ${updateState.status === "checking" ? "settings-button--active" : ""}`}
+            type="button"
+            title="Checar atualizacoes"
+            aria-label="Checar atualizacoes"
+            disabled={updateState.status === "checking"}
+            onClick={() => void handleCheckUpdates()}
+          >
+            <RefreshCcw
+              size={18}
+              className={updateState.status === "checking" ? "spin" : ""}
+            />
+          </button>
+          <button
+            className={`settings-button ${settingsOpen ? "settings-button--active" : ""}`}
+            type="button"
+            title="Configuracoes"
+            aria-label="Configuracoes"
+            onClick={() => setSettingsOpen((current) => !current)}
+          >
+            <Settings size={19} />
+          </button>
+        </div>
       </header>
 
       <div className="workspace">
@@ -78,6 +136,21 @@ export function App() {
 
           {settingsOpen && (
             <SettingsPanel settings={settings} onChange={setSettings} />
+          )}
+
+          {updateState.status !== "idle" && updateState.message && (
+            <section className={`update-banner update-banner--${updateState.status}`}>
+              <span>{updateState.message}</span>
+              {updateState.status === "available" && updateState.release && (
+                <button
+                  type="button"
+                  onClick={() => void openReleaseDownload(updateState.release!)}
+                >
+                  <Download size={17} />
+                  <span>Baixar</span>
+                </button>
+              )}
+            </section>
           )}
 
           {visibleChannels.length > 0 ? (

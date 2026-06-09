@@ -106,11 +106,22 @@ button {
   background: #1e282d;
 }
 
+.settings-button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
 .settings-button--active,
 .icon-button--primary {
   border-color: #38bd6b;
   color: #dfffe9;
   background: #12351f;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .icon-button--danger:hover {
@@ -275,6 +286,52 @@ button {
   border: 1px solid #28343a;
   border-radius: 8px;
   background: #151b1f;
+}
+
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid #314047;
+  border-radius: 8px;
+  color: #dce8eb;
+  background: #151b1f;
+}
+
+.update-banner span {
+  min-width: 0;
+}
+
+.update-banner button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 92px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid #3abe68;
+  border-radius: 8px;
+  color: #eefef3;
+  background: #12351f;
+  cursor: pointer;
+}
+
+.update-banner--available {
+  border-color: rgba(76, 193, 113, 0.68);
+  background: #14211a;
+}
+
+.update-banner--current {
+  border-color: rgba(224, 179, 90, 0.48);
+}
+
+.update-banner--error {
+  border-color: rgba(215, 80, 73, 0.48);
+  color: #ffdcd8;
 }
 
 .toggle-row,
@@ -515,6 +572,11 @@ button {
 
   .settings-panel {
     grid-template-columns: 1fr;
+  }
+
+  .update-banner {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .cards-grid {
