@@ -1,0 +1,14 @@
+export type ChannelStatus = "live" | "offline" | "unknown" | "error";
+
+export type KickChannel = {
+  slug: string;
+  username?: string;
+  avatarUrl?: string;
+  status: ChannelStatus;
+  title?: string;
+  category?: string;
+  viewers?: number;
+  lastCheckedAt?: number;
+  lastWentLiveAt?: number;
+  errorMessage?: string;
+};
