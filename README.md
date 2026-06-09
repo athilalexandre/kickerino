@@ -55,8 +55,8 @@ O projeto tem uma workflow em `.github/workflows/release.yml` que compila o app 
 Para criar uma Release com `.exe`/`.msi` anexado, envie uma tag:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.1.1
+git push origin v0.1.1
 ```
 
 Depois abra a aba **Releases** no GitHub e baixe o instalador gerado.
