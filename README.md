@@ -45,8 +45,23 @@ npm run tauri dev
 Para gerar instalador Windows:
 
 ```bash
-npm run tauri build
+npm run tauri:build
 ```
+
+## Gerar release no GitHub
+
+O projeto tem uma workflow em `.github/workflows/release.yml` que compila o app no Windows e publica os instaladores como artefatos.
+
+Para criar uma Release com `.exe`/`.msi` anexado, envie uma tag:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Depois abra a aba **Releases** no GitHub e baixe o instalador gerado.
+
+Tambem da para rodar manualmente em **Actions > Build Windows Release > Run workflow**. Nesse caso, baixe o arquivo em **Artifacts** no final da execucao.
 
 ## Estrutura
 
