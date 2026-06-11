@@ -1,8 +1,9 @@
-import { Plus, RefreshCcw } from "lucide-react";
+import { Bot, Plus, RefreshCcw } from "lucide-react";
 import { FormEvent, useState } from "react";
 import type { KickChannel } from "../types/channel";
 import { ChannelAvatar } from "./ChannelAvatar";
 import { StatusBadge } from "./StatusBadge";
+import { formatCountdown } from "../hooks/useSupportBot";
 
 type ChannelListProps = {
   channels: KickChannel[];
@@ -11,6 +12,8 @@ type ChannelListProps = {
   onAdd: (value: string) => boolean;
   onRefresh: () => void;
   onSelect: (slug: string) => void;
+  activeSupportSlugs: string[];
+  supportTimers: Record<string, number>;
 };
 
 export function ChannelList({
@@ -20,6 +23,8 @@ export function ChannelList({
   onAdd,
   onRefresh,
   onSelect,
+  activeSupportSlugs,
+  supportTimers,
 }: ChannelListProps) {
   const [draft, setDraft] = useState("");
 
@@ -57,6 +62,8 @@ export function ChannelList({
       <div className="sidebar-list">
         {channels.map((channel) => {
           const displayName = channel.username ?? channel.slug;
+          const isSupported = activeSupportSlugs.includes(channel.slug);
+          const supportTimer = supportTimers[channel.slug];
           return (
             <button
               className={`sidebar-row ${selectedSlug === channel.slug ? "sidebar-row--active" : ""}`}
@@ -66,11 +73,35 @@ export function ChannelList({
             >
               <ChannelAvatar src={channel.avatarUrl} name={displayName} />
               <span className="sidebar-row__name">{displayName}</span>
-              <StatusBadge status={channel.status} />
+              <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                {isSupported && (
+                  <span 
+                    title={`Robo de Apoio Ativo (${supportTimer !== undefined ? formatCountdown(supportTimer) : ""})`} 
+                    style={{ 
+                      display: "inline-flex", 
+                      alignItems: "center", 
+                      gap: "3px",
+                      fontSize: "10px",
+                      color: "#42c773",
+                      fontWeight: "bold",
+                      background: "rgba(66, 199, 115, 0.1)",
+                      padding: "1px 4px",
+                      borderRadius: "3px"
+                    }}
+                  >
+                    <Bot size={11} />
+                    {supportTimer !== undefined && (
+                      <span>{formatCountdown(supportTimer)}</span>
+                    )}
+                  </span>
+                )}
+                <StatusBadge status={channel.status} />
+              </span>
             </button>
           );
         })}
       </div>
+
 
       <button className="refresh-button" type="button" onClick={onRefresh} disabled={isChecking}>
         <RefreshCcw size={17} className={isChecking ? "spin" : ""} />

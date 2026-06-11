@@ -18,10 +18,10 @@ export function useChannels() {
     });
   }, [channels]);
 
-  function addChannel(value: string) {
+  function addChannel(value: string): string | null {
     const slug = normalizeSlug(value);
     if (!slug || channels.some((channel) => channel.slug === slug)) {
-      return false;
+      return null;
     }
 
     setChannels((current) => [
@@ -31,7 +31,7 @@ export function useChannels() {
         status: "unknown",
       },
     ]);
-    return true;
+    return slug;
   }
 
   function removeChannel(slug: string) {

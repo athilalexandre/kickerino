@@ -9,7 +9,13 @@ export const defaultSettings: AppSettings = {
   notificationsEnabled: true,
   checkIntervalSeconds: 60,
   openLiveOnDoubleClick: true,
+  supportBotEnabled: false,
+  supportIntervalMinutes: 10,
+  supportMessagesText: "crisjuliano:: No apoio\nsche:: much fish, takes love!",
+  supportPreferredQuality: "160p",
+  supportQualityCheckSeconds: 60,
 };
+
 
 export function loadChannels(): KickChannel[] {
   try {

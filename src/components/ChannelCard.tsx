@@ -1,14 +1,19 @@
-import { ExternalLink, Trash2 } from "lucide-react";
+import { Bot, ExternalLink, Send, Trash2, WifiOff } from "lucide-react";
 import { openKickChannel } from "../services/live";
 import type { KickChannel } from "../types/channel";
 import { ChannelAvatar } from "./ChannelAvatar";
 import { StatusBadge } from "./StatusBadge";
+import { formatCountdown } from "../hooks/useSupportBot";
 
 type ChannelCardProps = {
   channel: KickChannel;
   onRemove: (slug: string) => void;
   onSelect: (slug: string) => void;
   openLiveOnDoubleClick: boolean;
+  isSupported?: boolean;
+  supportTimer?: number;
+  onSendNow?: (slug: string) => void;
+  onToggleSupportOffline?: (slug: string) => void;
 };
 
 export function ChannelCard({
@@ -16,6 +21,10 @@ export function ChannelCard({
   onRemove,
   onSelect,
   openLiveOnDoubleClick,
+  isSupported,
+  supportTimer,
+  onSendNow,
+  onToggleSupportOffline,
 }: ChannelCardProps) {
   const displayName = channel.username ?? channel.slug;
   const stats =
@@ -39,7 +48,30 @@ export function ChannelCard({
         <span className="channel-card__body">
           <span className="channel-card__topline">
             <strong>{displayName}</strong>
-            <StatusBadge status={channel.status} />
+            <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              {isSupported && (
+                <span 
+                  title="Apoiando no robo (tempo ate a proxima mensagem)" 
+                  style={{ 
+                    display: "inline-flex", 
+                    alignItems: "center", 
+                    gap: "4px",
+                    fontSize: "11px",
+                    color: "#42c773",
+                    fontWeight: "bold",
+                    background: "rgba(66, 199, 115, 0.1)",
+                    padding: "2px 6px",
+                    borderRadius: "4px"
+                  }}
+                >
+                  <Bot size={13} />
+                  {supportTimer !== undefined && (
+                    <span>{formatCountdown(supportTimer)}</span>
+                  )}
+                </span>
+              )}
+              <StatusBadge status={channel.status} />
+            </span>
           </span>
           <span className="channel-card__title">
             {channel.title ?? `kick.com/${channel.slug}`}
@@ -48,7 +80,30 @@ export function ChannelCard({
         </span>
       </button>
 
+
       <div className="channel-card__actions">
+        {isSupported && onSendNow && (
+          <button
+            className="icon-button icon-button--success"
+            type="button"
+            title="Enviar mensagem agora"
+            aria-label={`Enviar mensagem para ${displayName}`}
+            onClick={() => onSendNow(channel.slug)}
+          >
+            <Send size={18} />
+          </button>
+        )}
+        {onToggleSupportOffline && (
+          <button
+            className={`icon-button ${channel.supportOffline ? "icon-button--warning" : ""}`}
+            type="button"
+            title={channel.supportOffline ? "Desativar apoio offline" : "Ativar apoio offline"}
+            aria-label={`Alternar apoio offline de ${displayName}`}
+            onClick={() => onToggleSupportOffline(channel.slug)}
+          >
+            <WifiOff size={18} />
+          </button>
+        )}
         <button
           className="icon-button"
           type="button"

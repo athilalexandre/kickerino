@@ -130,6 +130,23 @@ button {
   background: #331b1b;
 }
 
+.icon-button--success:hover {
+  border-color: #42c773;
+  color: #dfffe9;
+  background: #12351f;
+}
+
+.icon-button--warning {
+  border-color: #dca331;
+  color: #ffebd2;
+  background: #33240e;
+}
+
+.icon-button--warning:hover {
+  border-color: #f0bd5a;
+  background: #443216;
+}
+
 .workspace {
   display: grid;
   grid-template-columns: 294px minmax(0, 1fr);

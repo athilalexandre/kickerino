@@ -8,7 +8,9 @@ export type KickChannel = {
   title?: string;
   category?: string;
   viewers?: number;
+  chatroomId?: number;
   lastCheckedAt?: number;
   lastWentLiveAt?: number;
   errorMessage?: string;
+  supportOffline?: boolean;
 };

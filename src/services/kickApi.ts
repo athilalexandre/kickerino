@@ -9,6 +9,7 @@ type KickChannelPayload = {
   title?: string;
   category?: string;
   viewers?: number;
+  chatroomId?: number;
 };
 
 export function normalizeSlug(value: string) {
@@ -58,6 +59,7 @@ function mapPayload(payload: KickChannelPayload): KickChannel {
     title: payload.title,
     category: payload.category,
     viewers: payload.viewers,
+    chatroomId: payload.chatroomId,
     lastCheckedAt: Date.now(),
     lastWentLiveAt: status === "live" ? Date.now() : undefined,
   };

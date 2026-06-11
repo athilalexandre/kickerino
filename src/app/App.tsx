@@ -1,5 +1,7 @@
-import { Download, RefreshCcw, Settings, Wifi } from "lucide-react";
-import { useMemo, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { Bot, Download, RefreshCcw, Settings, UserCheck, UserX, Wifi } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { ChannelCard } from "../components/ChannelCard";
 import { ChannelList } from "../components/ChannelList";
 import { ChannelTabs } from "../components/ChannelTabs";
@@ -7,6 +9,7 @@ import { SettingsPanel } from "../components/SettingsPanel";
 import { useChannels } from "../hooks/useChannels";
 import { useLiveMonitor } from "../hooks/useLiveMonitor";
 import { useSettings } from "../hooks/useSettings";
+import { useSupportBot } from "../hooks/useSupportBot";
 import {
   checkForUpdates,
   openReleaseDownload,
@@ -23,6 +26,7 @@ export function App() {
   const [selectedSlug, setSelectedSlug] = useState("all");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [updateState, setUpdateState] = useState<UpdateState>({ status: "idle" });
+  const [kickLoginStatus, setKickLoginStatus] = useState<"checking" | "connected" | "disconnected">("checking");
   const { settings, setSettings } = useSettings();
   const { channels, sortedChannels, setChannels, addChannel, removeChannel } =
     useChannels();
@@ -31,6 +35,28 @@ export function App() {
     setChannels,
     settings,
   });
+
+  const { activeSupportSlugs, supportTimers, triggerManualMessage } = useSupportBot({
+    channels,
+    settings,
+  });
+
+  // Check login status on startup
+  useEffect(() => {
+    void invoke("open_login_window");
+
+    const unlistenPromise = listen<string>("kick-login-event", (event) => {
+      if (event.payload === "connected") {
+        setKickLoginStatus("connected");
+      } else {
+        setKickLoginStatus("disconnected");
+      }
+    });
+
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, []);
 
   const visibleChannels = useMemo(() => {
     if (selectedSlug === "all") {
@@ -45,6 +71,31 @@ export function App() {
     if (selectedSlug === slug) {
       setSelectedSlug("all");
     }
+  }
+
+  function handleAddChannel(value: string): boolean {
+    const slug = addChannel(value);
+    if (slug) {
+      const currentText = settings.supportMessagesText.trim();
+      const newLine = `${slug}:: No apoio`;
+      const nextText = currentText ? `${currentText}\n${newLine}` : newLine;
+      setSettings({
+        ...settings,
+        supportMessagesText: nextText,
+      });
+      return true;
+    }
+    return false;
+  }
+
+  function toggleChannelSupportOffline(slug: string) {
+    setChannels((current) =>
+      current.map((channel) =>
+        channel.slug === slug
+          ? { ...channel, supportOffline: !channel.supportOffline }
+          : channel
+      )
+    );
   }
 
   async function handleCheckUpdates() {
@@ -87,11 +138,57 @@ export function App() {
           </span>
           <div>
             <h1>Kickerino</h1>
-            <p>{liveCount} ao vivo</p>
+            <p>
+              {liveCount} ao vivo
+              {settings.supportBotEnabled && (
+                <span style={{ marginLeft: "8px", color: "#42c773", fontWeight: "bold" }}>
+                  • Robo ativo ({activeSupportSlugs.length})
+                </span>
+              )}
+            </p>
           </div>
         </div>
 
         <div className="topbar-actions">
+          {/* Kick Login Status */}
+          <button
+            className={`settings-button ${kickLoginStatus === "connected" ? "settings-button--active" : ""}`}
+            type="button"
+            title={
+              kickLoginStatus === "connected"
+                ? "Conta Kick Conectada"
+                : kickLoginStatus === "checking"
+                  ? "Verificando Login da Kick..."
+                  : "Conectar Conta Kick"
+            }
+            aria-label="Status Login Kick"
+            onClick={() => {
+              setKickLoginStatus("checking");
+              void invoke("open_login_window");
+            }}
+            disabled={kickLoginStatus === "checking"}
+          >
+            {kickLoginStatus === "connected" ? (
+              <UserCheck size={19} style={{ color: "#42c773" }} />
+            ) : kickLoginStatus === "checking" ? (
+              <RefreshCcw size={18} className="spin" />
+            ) : (
+              <UserX size={19} style={{ color: "#dc5d57" }} />
+            )}
+          </button>
+
+          {/* Support Bot Toggle */}
+          <button
+            className={`settings-button ${settings.supportBotEnabled ? "settings-button--active" : ""}`}
+            type="button"
+            title={settings.supportBotEnabled ? "Desativar Robo de Apoio" : "Ativar Robo de Apoio"}
+            aria-label="Toggle Robo de Apoio"
+            onClick={() => setSettings({ ...settings, supportBotEnabled: !settings.supportBotEnabled })}
+          >
+            <Bot size={19} />
+          </button>
+
+          {/* Update Check */}
           <button
             className={`settings-button ${updateState.status === "checking" ? "settings-button--active" : ""}`}
             type="button"
@@ -105,6 +202,8 @@ export function App() {
               className={updateState.status === "checking" ? "spin" : ""}
             />
           </button>
+
+          {/* Settings cog */}
           <button
             className={`settings-button ${settingsOpen ? "settings-button--active" : ""}`}
             type="button"
@@ -122,9 +221,11 @@ export function App() {
           channels={sortedChannels}
           selectedSlug={selectedSlug}
           isChecking={isChecking}
-          onAdd={addChannel}
+          onAdd={handleAddChannel}
           onRefresh={() => void refreshAll()}
           onSelect={setSelectedSlug}
+          activeSupportSlugs={activeSupportSlugs}
+          supportTimers={supportTimers}
         />
 
         <section className="content">
@@ -162,6 +263,10 @@ export function App() {
                   onRemove={removeAndRetainSelection}
                   onSelect={setSelectedSlug}
                   openLiveOnDoubleClick={settings.openLiveOnDoubleClick}
+                  isSupported={activeSupportSlugs.includes(channel.slug)}
+                  supportTimer={supportTimers[channel.slug]}
+                  onSendNow={triggerManualMessage}
+                  onToggleSupportOffline={toggleChannelSupportOffline}
                 />
               ))}
             </div>
@@ -184,3 +289,5 @@ export function App() {
     </main>
   );
 }
+
+
