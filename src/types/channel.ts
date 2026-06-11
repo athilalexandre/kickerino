@@ -5,6 +5,7 @@ export type ChannelSupportConfig = {
   messages: string[];            // Lista de mensagens rotativas
   nextMessageIndex: number;      // Índice da próxima mensagem a ser enviada
   sendAllAtOnce?: boolean;       // Enviar todas as mensagens de uma vez em um único ciclo
+  rotateMessages?: boolean;      // Enviar mensagens intercaladas (uma de cada vez ciclicamente)
 };
 
 export type KickChannel = {

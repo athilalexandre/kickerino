@@ -301,6 +301,7 @@ async fn open_login_window(app: AppHandle) -> Result<(), String> {
     let js_script = r##"
         (function() {
             console.log('[Kickerino] Monitor de login iniciado.');
+            let disconnectedCount = 0;
             setInterval(() => {
                 const loggedIn = !!(
                     document.querySelector('a[href*="/dashboard"]') ||
@@ -324,6 +325,7 @@ async fn open_login_window(app: AppHandle) -> Result<(), String> {
                 );
                 
                 if (loggedIn) {
+                    disconnectedCount = 0;
                     if (window.location.hash !== "#connected") {
                         window.location.hash = "connected";
                     }
@@ -336,9 +338,16 @@ async fn open_login_window(app: AppHandle) -> Result<(), String> {
                                          return txt.includes('log in') || txt.includes('entrar') || txt.includes('login') || txt.includes('cadastrar') || txt.includes('sign up');
                                      });
                     if (loginBtn) {
-                        if (window.location.hash !== "#disconnected") {
-                            window.location.hash = "disconnected";
+                        disconnectedCount++;
+                        // Apenas confirma como disconnected se persistir por 6 ciclos (3 segundos)
+                        // Isso previne falsos positivos de desconexão durante o carregamento inicial da página (hydration lag)
+                        if (disconnectedCount >= 6) {
+                            if (window.location.hash !== "#disconnected") {
+                                window.location.hash = "disconnected";
+                            }
                         }
+                    } else {
+                        disconnectedCount = 0;
                     }
                 }
             }, 500);
@@ -431,6 +440,78 @@ fn log_message(app: AppHandle, level: String, message: String, timestamp: String
     }));
 }
 
+#[derive(Debug, serde::Deserialize)]
+struct KickEmoteItem {
+    id: Value,
+    name: Option<String>,
+    slug: Option<String>,
+    code: Option<String>,
+    keyword: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct KickEmoteGroup {
+    emotes: Option<Vec<KickEmoteItem>>,
+}
+
+#[tauri::command]
+async fn fetch_channels_emotes(slugs: Vec<String>) -> Result<std::collections::HashMap<String, String>, String> {
+    let client = reqwest::Client::new();
+    let emote_map = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+    let ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+    let mut handles = Vec::new();
+    for slug in slugs {
+        if let Ok(normalized) = normalize_slug(&slug) {
+            let client_clone = client.clone();
+            let emote_map_clone = emote_map.clone();
+            handles.push(tokio::spawn(async move {
+                let url = format!("https://kick.com/api/v2/emotes/{}", normalized);
+                let response = client_clone.get(url)
+                    .header(USER_AGENT, ua)
+                    .header(ACCEPT, "application/json")
+                    .send()
+                    .await;
+                
+                if let Ok(res) = response {
+                    if res.status().is_success() {
+                        if let Ok(groups) = res.json::<Vec<KickEmoteGroup>>().await {
+                            let mut map = emote_map_clone.lock().unwrap();
+                            for group in groups {
+                                if let Some(emotes) = group.emotes {
+                                    for item in emotes {
+                                        let id_str = match item.id {
+                                            Value::Number(n) => n.to_string(),
+                                            Value::String(s) => s,
+                                            _ => continue,
+                                        };
+                                        let name_str = item.name
+                                            .or(item.slug)
+                                            .or(item.code)
+                                            .or(item.keyword);
+                                        if let Some(name) = name_str {
+                                            if !name.is_empty() {
+                                                map.insert(name.to_lowercase(), id_str);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }));
+        }
+    }
+
+    for h in handles {
+        let _ = h.await;
+    }
+
+    let map = std::sync::Arc::try_unwrap(emote_map).unwrap().into_inner().unwrap();
+    Ok(map)
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -444,9 +525,11 @@ pub fn run() {
             close_all_support_windows,
             open_login_window,
             send_support_message,
-            log_message
+            log_message,
+            fetch_channels_emotes
         ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o Kickerino");
 }
+
 

@@ -75,9 +75,21 @@ export function ChannelCard({
     }
   };
 
+  const handleRotateMessagesChange = (checked: boolean) => {
+    if (onUpdateSupportConfig) {
+      onUpdateSupportConfig(channel.slug, {
+        rotateMessages: checked,
+        sendAllAtOnce: checked ? false : supportConfig.sendAllAtOnce,
+      });
+    }
+  };
+
   const handleSendAllAtOnceChange = (checked: boolean) => {
     if (onUpdateSupportConfig) {
-      onUpdateSupportConfig(channel.slug, { sendAllAtOnce: checked });
+      onUpdateSupportConfig(channel.slug, {
+        sendAllAtOnce: checked,
+        rotateMessages: checked ? false : supportConfig.rotateMessages,
+      });
     }
   };
 
@@ -191,8 +203,8 @@ export function ChannelCard({
             <Settings size={14} /> Configurações do Robô
           </h4>
 
-          <div className="channel-card__config-row">
-            <label className="channel-card__config-field">
+          <div className="channel-card__config-row" style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "10px" }}>
+            <label className="channel-card__config-field" style={{ width: "100%" }}>
               <span>Intervalo do Canal (min):</span>
               <input
                 type="number"
@@ -203,14 +215,25 @@ export function ChannelCard({
               />
             </label>
 
-            <label className="channel-card__config-checkbox">
-              <input
-                type="checkbox"
-                checked={!!supportConfig.sendAllAtOnce}
-                onChange={(e) => handleSendAllAtOnceChange(e.currentTarget.checked)}
-              />
-              <span>Enviar todas de uma vez</span>
-            </label>
+            <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", marginTop: "4px" }}>
+              <label className="channel-card__config-checkbox">
+                <input
+                  type="checkbox"
+                  checked={!!supportConfig.rotateMessages}
+                  onChange={(e) => handleRotateMessagesChange(e.currentTarget.checked)}
+                />
+                <span>Mensagens intercaladas</span>
+              </label>
+
+              <label className="channel-card__config-checkbox">
+                <input
+                  type="checkbox"
+                  checked={!!supportConfig.sendAllAtOnce}
+                  onChange={(e) => handleSendAllAtOnceChange(e.currentTarget.checked)}
+                />
+                <span>Enviar todas de uma vez</span>
+              </label>
+            </div>
           </div>
 
           <div className="channel-card__messages-section">

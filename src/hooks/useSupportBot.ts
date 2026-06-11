@@ -44,7 +44,9 @@ function buildSupportScript(
   messages: string[],
   _qualityEnabled: boolean,
   _preferredQuality: string,
-  _qualityCheckSeconds: number
+  _qualityCheckSeconds: number,
+  allChannelSlugs: string[],
+  resolvedEmoteMap: Record<string, string>
 ): string {
   return `
     (function() {
@@ -57,6 +59,7 @@ function buildSupportScript(
 
       const CONFIG = {
         messages: ${JSON.stringify(messages)},
+        allChannelSlugs: ${JSON.stringify(allChannelSlugs)},
       };
 
       const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -106,9 +109,12 @@ function buildSupportScript(
         }
 
         const requestHeaders = {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + sessionToken
+          'Content-Type': 'application/json'
         };
+
+        if (sessionToken) {
+          requestHeaders['Authorization'] = 'Bearer ' + sessionToken;
+        }
 
         if (xsrfToken) {
           requestHeaders['X-XSRF-Token'] = xsrfToken;
@@ -132,38 +138,9 @@ function buildSupportScript(
           'ez': '3454',
           'feelsbadman': '3455',
           'feelsgoodman': '3456',
-          'gigachad': '3457'
+          'gigachad': '3457',
+          ...${JSON.stringify(resolvedEmoteMap)}
         };
-
-        try {
-          tauriLog('info', 'Buscando emotes para o canal ${channelSlug}...');
-          const chanRes = await fetch('https://kick.com/api/v2/channels/' + ${JSON.stringify(channelSlug)});
-          if (chanRes.ok) {
-            const chanData = await chanRes.json();
-            const pools = [
-              chanData.emotes,
-              chanData.chatroom?.emotes,
-              chanData.chatroom?.channel_emotes,
-              chanData.chatroom?.subscriber_emotes
-            ];
-            pools.forEach(pool => {
-              if (Array.isArray(pool)) {
-                pool.forEach(item => {
-                  const id = item?.id || item?.emote_id || item?.emoteId || (item?.emote?.id);
-                  const name = item?.name || item?.slug || item?.code || item?.keyword || (item?.emote?.name);
-                  if (id && name) {
-                    emoteMap[name.toLowerCase()] = String(id);
-                  }
-                });
-              }
-            });
-            tauriLog('info', 'Emotes do canal carregados com sucesso.');
-          } else {
-            tauriLog('warn', 'Nao foi possivel carregar emotes do canal. Status: ' + chanRes.status);
-          }
-        } catch (e) {
-          tauriLog('error', 'Erro ao obter emotes: ' + e.message);
-        }
 
         const replaceEmotes = (text) => {
           if (typeof text !== 'string') return text;
@@ -188,7 +165,7 @@ function buildSupportScript(
           tauriLog('info', 'Tentando enviar mensagem (' + (i + 1) + '/' + CONFIG.messages.length + ') para ${channelSlug}: ' + message);
 
           try {
-            const sendRes = await fetch('https://kick.com/api/v2/messages/send/' + chatroomId, {
+            const sendRes = await fetch('/api/v2/messages/send/' + chatroomId, {
               method: 'POST',
               headers: requestHeaders,
               body: JSON.stringify({
@@ -427,7 +404,7 @@ export function useSupportBot({ channels, settings, setChannels }: SupportBotPar
       let messagesToSend: string[] = [];
       if (supportConfig.sendAllAtOnce) {
         messagesToSend = [...rawMessages];
-      } else {
+      } else if (supportConfig.rotateMessages) {
         const nextIdx = supportConfig.nextMessageIndex || 0;
         messagesToSend = [rawMessages[nextIdx % rawMessages.length]];
 
@@ -445,6 +422,22 @@ export function useSupportBot({ channels, settings, setChannels }: SupportBotPar
               : c
           )
         );
+      } else {
+        // Envia apenas a primeira mensagem da lista (modo de envio unitário simples)
+        messagesToSend = [rawMessages[0]];
+      }
+
+      const allSlugs = channelsRef.current.map((c) => c.slug);
+      
+      let resolvedEmoteMap: Record<string, string> = {};
+      try {
+        console.log(`[useSupportBot] Buscando emotes via Rust para os canais...`);
+        resolvedEmoteMap = await invoke<Record<string, string>>("fetch_channels_emotes", {
+          slugs: allSlugs,
+        });
+        console.log(`[useSupportBot] ${Object.keys(resolvedEmoteMap).length} emotes carregados via Rust.`);
+      } catch (err) {
+        console.error(`[useSupportBot] Falha ao obter emotes via Rust:`, err);
       }
 
       const js_script = buildSupportScript(
@@ -453,7 +446,9 @@ export function useSupportBot({ channels, settings, setChannels }: SupportBotPar
         messagesToSend,
         true, // Always enforce quality
         settings.supportPreferredQuality,
-        settings.supportQualityCheckSeconds
+        settings.supportQualityCheckSeconds,
+        allSlugs,
+        resolvedEmoteMap
       );
 
       console.log(`[useSupportBot] Iniciando envio de mensagem para ${nextSlug} com chatroomId ${chatroomId}`);

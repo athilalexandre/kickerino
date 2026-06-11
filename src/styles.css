@@ -32,7 +32,7 @@ button {
 
 .shell {
   display: grid;
-  grid-template-rows: 64px 1fr;
+  grid-template-rows: auto 64px 1fr;
   min-height: 100vh;
   background:
     linear-gradient(180deg, rgba(52, 75, 81, 0.22), transparent 220px),
@@ -583,7 +583,7 @@ button {
 
 @media (max-width: 820px) {
   .shell {
-    grid-template-rows: auto 1fr;
+    grid-template-rows: auto auto 1fr;
   }
 
   .topbar {
@@ -704,7 +704,7 @@ button {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: 120px;
+  max-height: 116px;
   overflow-y: auto;
   padding-right: 4px;
   border: 1px solid rgba(42, 51, 56, 0.4);
@@ -712,6 +712,26 @@ button {
   background: rgba(16, 20, 23, 0.2);
   padding: 6px;
 }
+
+/* Custom scrollbar para a lista de mensagens */
+.channel-card__messages-list::-webkit-scrollbar {
+  width: 5px;
+}
+
+.channel-card__messages-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.channel-card__messages-list::-webkit-scrollbar-thumb {
+  background: rgba(79, 107, 117, 0.25);
+  border-radius: 99px;
+  transition: background 150ms;
+}
+
+.channel-card__messages-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(66, 199, 115, 0.45);
+}
+
 
 .channel-card__message-item {
   display: flex;
@@ -1087,3 +1107,91 @@ button {
     white-space: nowrap;
   }
 }
+
+/* ─── UX Improvements ─── */
+
+/* Scrollbar global moderno e elegante */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(10, 14, 18, 0.25);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(79, 107, 117, 0.28);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 4px;
+  transition: background 180ms ease, border-color 180ms ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(66, 199, 115, 0.45);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+/* Efeito de foco premium para inputs e textareas em todo o app */
+input[type="text"]:focus,
+input[type="number"]:focus,
+textarea:focus {
+  border-color: rgba(66, 199, 115, 0.6) !important;
+  box-shadow: 0 0 0 3px rgba(66, 199, 115, 0.15) !important;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+/* Transição suave para botões de engrenagem e ícones de ação */
+.settings-button,
+.icon-button {
+  transition: all 180ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.settings-button:hover,
+.icon-button:hover {
+  transform: translateY(-1px);
+}
+
+.settings-button:active,
+.icon-button:active {
+  transform: translateY(0);
+}
+
+.beta-banner {
+  background: rgba(255, 221, 27, 0.12); /* Transparent neon yellow base */
+  backdrop-filter: blur(8px);
+  color: #ffdd1b; /* Neon yellow text */
+  font-weight: 600;
+  font-size: 13px;
+  text-align: center;
+  padding: 8px 16px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 2px solid #ffdd1b;
+  animation: neon-bar-glow 1.5s ease-in-out infinite alternate;
+}
+
+.beta-banner strong {
+  font-weight: 800;
+}
+
+@keyframes neon-bar-glow {
+  from {
+    box-shadow: 
+      0 0 8px rgba(255, 221, 27, 0.5),
+      0 0 18px rgba(255, 221, 27, 0.3),
+      inset 0 0 8px rgba(255, 221, 27, 0.2);
+  }
+  to {
+    box-shadow: 
+      0 0 4px rgba(255, 221, 27, 0.4),
+      0 0 12px rgba(255, 221, 27, 0.2),
+      inset 0 0 4px rgba(255, 221, 27, 0.1);
+  }
+}
+

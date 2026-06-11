@@ -163,6 +163,9 @@ export function App() {
 
   return (
     <main className="shell">
+      <div className="beta-banner">
+        ⚠️ <strong>Versão Beta:</strong> Bugs podem aparecer e emojis não estão funcionando ainda.
+      </div>
       <header className="topbar">
         <div className="brand">
           <span className="brand__mark">
