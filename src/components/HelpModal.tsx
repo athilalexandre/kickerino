@@ -126,12 +126,11 @@ export function HelpModal({ isOpen, onClose }: HelpModalProps) {
                   <strong>💡 Como escrever os emotes:</strong>
                   <ul>
                     <li>
-                      <strong>Emotes nativos do Kick:</strong> Sempre com dois pontos ao redor.
-                      <br /><em>Exemplo:</em> <code>:kick:</code>, <code>:kickclassic:</code>
+                      <strong>Emotes nativos e de canal (Kick):</strong> Digite com dois pontos ao redor (ex: <code>:classic:</code> para o patinho ou <code>:OOOO:</code> para o emote personalizado do canal). O Kickerino consulta a API do canal e traduz automaticamente para o formato visual.
                     </li>
                     <li>
                       <strong>Emotes de extensões (7TV / BTTV):</strong> Escreva o nome exato do emote sem dois pontos.
-                      <br /><em>Exemplo:</em> <code>classic</code>, <code>KEKW</code>, <code>catJAM</code>
+                      <br /><em>Exemplo:</em> <code>KEKW</code>, <code>catJAM</code>, <code>GIGACHAD</code>
                     </li>
                   </ul>
                 </div>

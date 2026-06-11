@@ -30,10 +30,8 @@ Clique no ícone de engrenagem (`Settings`) de qualquer card para gerenciar suas
 ## 💬 Guia de Formatação e Emotes
 Para garantir que suas mensagens e emotes sejam renderizados corretamente e sem erros no chat da Kick, siga as seguintes orientações:
 
-| Tipo de Emote | Formatação Correta | Exemplo Prático | Onde é renderizado |
-| :--- | :--- | :--- | :--- |
-| **Emotes Nativos do Kick** | Devem ser digitados com dois pontos no início e no final, em minúsculas. | `:kick:` ou `:classic:` | Qualquer chat da Kick (se o emote estiver disponível no canal). |
-| **Emotes do 7TV** | Devem ser digitados em texto simples, **sem dois pontos**. | `classic` ou `KEKW` | Visualizado no navegador de usuários que possuem a extensão do 7TV instalada. |
+| **Emotes Nativos/de Canal (Kick)** | Devem ser digitados com dois pontos (ex: `:classic:` para o patinho ou `:OOOO:` para emotes do canal). O Kickerino consulta a API do canal e traduz automaticamente para o formato nativo. | `:classic:` ou `:OOOO:` | Renderizado como imagem no chat da Kick. |
+| **Emotes do 7TV** | Devem ser digitados em texto simples, **sem dois pontos**. | `KEKW` ou `catJAM` | Visualizado no navegador de usuários que possuem a extensão do 7TV instalada. |
 
 > [!WARNING]
 > **Proibição de Quebras de Linha (`\n`):**

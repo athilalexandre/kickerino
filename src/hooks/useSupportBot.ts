@@ -114,8 +114,77 @@ function buildSupportScript(
           requestHeaders['X-XSRF-Token'] = xsrfToken;
         }
 
+        // ─── Mapeamento de Emotes ───
+        const emoteMap = {
+          'classic': '5470844',
+          'kekw': '18',
+          'lul': '19',
+          'pog': '21',
+          'biblethump': '22',
+          'kappa': '24',
+          '5head': '3447',
+          'ayaya': '3448',
+          'babyrage': '3449',
+          'batchest': '3450',
+          'clink': '3451',
+          'copium': '3452',
+          'dansgame': '3453',
+          'ez': '3454',
+          'feelsbadman': '3455',
+          'feelsgoodman': '3456',
+          'gigachad': '3457'
+        };
+
+        try {
+          tauriLog('info', 'Buscando emotes para o canal ${channelSlug}...');
+          const chanRes = await fetch('https://kick.com/api/v2/channels/' + ${JSON.stringify(channelSlug)});
+          if (chanRes.ok) {
+            const chanData = await chanRes.json();
+            const pools = [
+              chanData.emotes,
+              chanData.chatroom?.emotes,
+              chanData.chatroom?.channel_emotes,
+              chanData.chatroom?.subscriber_emotes
+            ];
+            pools.forEach(pool => {
+              if (Array.isArray(pool)) {
+                pool.forEach(item => {
+                  const id = item?.id || item?.emote_id || item?.emoteId || (item?.emote?.id);
+                  const name = item?.name || item?.slug || item?.code || item?.keyword || (item?.emote?.name);
+                  if (id && name) {
+                    emoteMap[name.toLowerCase()] = String(id);
+                  }
+                });
+              }
+            });
+            tauriLog('info', 'Emotes do canal carregados com sucesso.');
+          } else {
+            tauriLog('warn', 'Nao foi possivel carregar emotes do canal. Status: ' + chanRes.status);
+          }
+        } catch (e) {
+          tauriLog('error', 'Erro ao obter emotes: ' + e.message);
+        }
+
+        const replaceEmotes = (text) => {
+          if (typeof text !== 'string') return text;
+          return text.replace(/:([a-zA-Z0-9_-]+):/g, (match, emoteName) => {
+            const lowerName = emoteName.toLowerCase();
+            if (emoteMap[lowerName]) {
+              const emoteId = emoteMap[lowerName];
+              return '[emote:' + emoteId + ':' + emoteName + ']';
+            }
+            return match;
+          });
+        };
+
         for (let i = 0; i < CONFIG.messages.length; i++) {
-          const message = CONFIG.messages[i];
+          const rawMessage = CONFIG.messages[i];
+          const message = replaceEmotes(rawMessage);
+          
+          if (message !== rawMessage) {
+            tauriLog('info', 'Mensagem traduzida para emotes: ' + message);
+          }
+
           tauriLog('info', 'Tentando enviar mensagem (' + (i + 1) + '/' + CONFIG.messages.length + ') para ${channelSlug}: ' + message);
 
           try {
