@@ -12,6 +12,7 @@ type QueueItem = {
 type SupportBotParams = {
   channels: KickChannel[];
   settings: AppSettings;
+  setChannels: React.Dispatch<React.SetStateAction<KickChannel[]>>;
 };
 
 function getMessagesForChannel(slug: string, text: string): string[] {
@@ -92,73 +93,55 @@ function buildSupportScript(
           return;
         }
 
-        const message = CONFIG.messages[Math.floor(Math.random() * CONFIG.messages.length)];
-        tauriLog('info', 'Tentando enviar mensagem para ${channelSlug}: ' + message);
+        const chatroomId = ${chatroomId};
+        tauriLog('info', 'Chatroom ID obtido estaticamente: ' + chatroomId);
 
-        try {
-          // --- INFO DE DEPURAÇÃO ---
-          tauriLog('info', 'Document Cookie: ' + document.cookie);
-          const metas = Array.from(document.querySelectorAll('meta')).map(m => (m.name || m.getAttribute('property') || '') + '=' + m.content).join(', ');
-          tauriLog('info', 'Metas: ' + metas);
-          const globals = [];
-          for (const key in window) {
-            if (key.toLowerCase().includes('csrf') || key.toLowerCase().includes('xsrf') || key.toLowerCase().includes('token')) {
-              globals.push(key + '=' + String(window[key]).slice(0, 100));
+        const sessionToken = getCookie('session_token') || '';
+        const xsrfToken = getCookie('XSRF-TOKEN') || '';
+
+        if (sessionToken) {
+          tauriLog('info', 'Session token obtido com sucesso.');
+        } else {
+          tauriLog('warn', 'Aviso: Cookie session_token nao encontrado.');
+        }
+
+        const requestHeaders = {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + sessionToken
+        };
+
+        if (xsrfToken) {
+          requestHeaders['X-XSRF-Token'] = xsrfToken;
+        }
+
+        for (let i = 0; i < CONFIG.messages.length; i++) {
+          const message = CONFIG.messages[i];
+          tauriLog('info', 'Tentando enviar mensagem (' + (i + 1) + '/' + CONFIG.messages.length + ') para ${channelSlug}: ' + message);
+
+          try {
+            const sendRes = await fetch('https://kick.com/api/v2/messages/send/' + chatroomId, {
+              method: 'POST',
+              headers: requestHeaders,
+              body: JSON.stringify({
+                content: message,
+                type: 'message'
+              })
+            });
+
+            if (sendRes.ok) {
+              tauriLog('success', 'Mensagem ' + (i + 1) + ' enviada com sucesso via API para ${channelSlug}');
+            } else {
+              const errorText = await sendRes.text();
+              tauriLog('error', 'Erro ao enviar mensagem ' + (i + 1) + ': ' + sendRes.status + ' - ' + errorText);
             }
-          }
-          tauriLog('info', 'Globals: ' + globals.join(', '));
-          const nextDataEl = document.getElementById('__NEXT_DATA__');
-          if (nextDataEl) {
-            tauriLog('info', 'NEXT_DATA encontrado. Analisando props...');
-            try {
-              const nd = JSON.parse(nextDataEl.textContent || '{}');
-              tauriLog('info', 'NEXT_DATA props keys: ' + Object.keys(nd.props?.pageProps || {}).join(', '));
-            } catch (e) {}
-          }
-          // --------------------------
-
-          // 1. Obter o chatroom ID do canal (injetado estaticamente)
-          const chatroomId = ${chatroomId};
-          tauriLog('info', 'Chatroom ID obtido estaticamente: ' + chatroomId);
-
-          // 2. Extrair tokens de autenticação
-          const sessionToken = getCookie('session_token') || '';
-          const xsrfToken = getCookie('XSRF-TOKEN') || '';
-
-          if (sessionToken) {
-            tauriLog('info', 'Session token obtido com sucesso.');
-          } else {
-            tauriLog('warn', 'Aviso: Cookie session_token nao encontrado.');
+          } catch (error) {
+            tauriLog('error', 'Falha no envio da mensagem ' + (i + 1) + ': ' + (error instanceof Error ? error.message : String(error)));
           }
 
-          const requestHeaders = {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + sessionToken
-          };
-
-          if (xsrfToken) {
-            requestHeaders['X-XSRF-Token'] = xsrfToken;
+          if (i < CONFIG.messages.length - 1) {
+            tauriLog('info', 'Aguardando 1.5s antes de enviar a proxima mensagem...');
+            await sleep(1500);
           }
-
-          // 3. Enviar a mensagem
-          tauriLog('info', 'Disparando POST para enviar mensagem...');
-          const sendRes = await fetch('https://kick.com/api/v2/messages/send/' + chatroomId, {
-            method: 'POST',
-            headers: requestHeaders,
-            body: JSON.stringify({
-              content: message,
-              type: 'message'
-            })
-          });
-
-          if (sendRes.ok) {
-            tauriLog('success', 'Mensagem enviada com sucesso via API para ${channelSlug}');
-          } else {
-            const errorText = await sendRes.text();
-            throw new Error('Erro ao enviar mensagem: ' + sendRes.status + ' - ' + errorText);
-          }
-        } catch (error) {
-          tauriLog('error', 'Falha no envio da mensagem: ' + (error instanceof Error ? error.message : String(error)));
         }
       }
 
@@ -178,7 +161,6 @@ function buildSupportScript(
         muteVideos();
         const muteInterval = setInterval(muteVideos, 500);
 
-        // Aguarda a pagina carregar e estabilizar os cookies de sessao
         await sleep(5000);
         await sendChatMessage();
         clearInterval(muteInterval);
@@ -193,12 +175,17 @@ function buildSupportScript(
   `;
 }
 
-export function useSupportBot({ channels, settings }: SupportBotParams) {
+export function useSupportBot({ channels, settings, setChannels }: SupportBotParams) {
   const [sendQueue, setSendQueue] = useState<QueueItem[]>([]);
   const [isSending, setIsSending] = useState<boolean>(false);
   const [supportTimers, setSupportTimers] = useState<Record<string, number>>({});
   const timeoutRef = useRef<number | null>(null);
   const processingRef = useRef<string | null>(null);
+
+  const channelsRef = useRef(channels);
+  useEffect(() => {
+    channelsRef.current = channels;
+  }, [channels]);
 
   // Redefine activeSupportSlugs: channels that should be supported (individual support or global support enabled)
   const activeSupportSlugs = channels
@@ -308,7 +295,7 @@ export function useSupportBot({ channels, settings }: SupportBotParams) {
     const isManual = nextItem.isManual;
 
     // Verify channel exists in our list and is eligible to send
-    const channel = channels.find((c) => c.slug === nextSlug);
+    const channel = channelsRef.current.find((c) => c.slug === nextSlug);
     if (!channel) {
       setSendQueue((q) => q.slice(1));
       return;
@@ -363,11 +350,38 @@ export function useSupportBot({ channels, settings }: SupportBotParams) {
         return;
       }
 
-      const messages = getMessagesForChannel(nextSlug, settings.supportMessagesText);
+      const supportConfig = channel.supportConfig || { messages: [], nextMessageIndex: 0 };
+      const rawMessages = supportConfig.messages && supportConfig.messages.length > 0
+        ? supportConfig.messages
+        : ["No apoio"];
+
+      let messagesToSend: string[] = [];
+      if (supportConfig.sendAllAtOnce) {
+        messagesToSend = [...rawMessages];
+      } else {
+        const nextIdx = supportConfig.nextMessageIndex || 0;
+        messagesToSend = [rawMessages[nextIdx % rawMessages.length]];
+
+        // Increment nextMessageIndex in react state/localStorage
+        const nextNextIdx = (nextIdx + 1) % rawMessages.length;
+        setChannels((prev) =>
+          prev.map((c) =>
+            c.slug === nextSlug
+              ? {
+                  ...c,
+                  supportConfig: c.supportConfig
+                    ? { ...c.supportConfig, nextMessageIndex: nextNextIdx }
+                    : { messages: [], nextMessageIndex: nextNextIdx },
+                }
+              : c
+          )
+        );
+      }
+
       const js_script = buildSupportScript(
         nextSlug,
         chatroomId,
-        messages,
+        messagesToSend,
         true, // Always enforce quality
         settings.supportPreferredQuality,
         settings.supportQualityCheckSeconds
@@ -400,12 +414,12 @@ export function useSupportBot({ channels, settings }: SupportBotParams) {
   }, [
     sendQueue,
     isSending,
-    channels,
     activeSupportSlugs.length,
-    settings.supportMessagesText,
     settings.supportPreferredQuality,
     settings.supportQualityCheckSeconds,
     settings.supportOfflineChannels,
+    settings.supportBotEnabled,
+    setChannels,
   ]);
 
   // Countdown timer loop
@@ -447,7 +461,9 @@ export function useSupportBot({ channels, settings }: SupportBotParams) {
         const slugsToQueue: string[] = [];
 
         for (const slug of Object.keys(next)) {
-          const maxSecs = settings.supportIntervalMinutes * 60;
+          const channel = channelsRef.current.find((c) => c.slug === slug);
+          const intervalMinutes = channel?.supportConfig?.intervalMinutes ?? settings.supportIntervalMinutes;
+          const maxSecs = intervalMinutes * 60;
 
           // Clamp timer value if it exceeds the new limit (e.g. settings changed)
           if (next[slug] > maxSecs && next[slug] > 5) {
@@ -502,9 +518,11 @@ export function useSupportBot({ channels, settings }: SupportBotParams) {
     // Reset the timer for this slug in React back to the interval
     setSupportTimers((prev) => {
       if (prev[slug] !== undefined) {
+        const channel = channelsRef.current.find((c) => c.slug === slug);
+        const intervalMinutes = channel?.supportConfig?.intervalMinutes ?? settings.supportIntervalMinutes;
         return {
           ...prev,
-          [slug]: settings.supportIntervalMinutes * 60,
+          [slug]: intervalMinutes * 60,
         };
       }
       return prev;

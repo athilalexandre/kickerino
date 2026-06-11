@@ -1,16 +1,18 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Bot, Download, RefreshCcw, Settings, UserCheck, UserX, Wifi } from "lucide-react";
+import { Bot, Download, RefreshCcw, Settings, UserCheck, UserX, Wifi, HelpCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { ChannelCard } from "../components/ChannelCard";
 import { ChannelList } from "../components/ChannelList";
 import { ChannelTabs } from "../components/ChannelTabs";
 import { SettingsPanel } from "../components/SettingsPanel";
+import { HelpModal } from "../components/HelpModal";
 import { useChannels } from "../hooks/useChannels";
 import { useLiveMonitor } from "../hooks/useLiveMonitor";
 import { useSettings } from "../hooks/useSettings";
 import { useSupportBot } from "../hooks/useSupportBot";
 import type { AppSettings } from "../types/settings";
+import type { ChannelSupportConfig } from "../types/channel";
 import {
   checkForUpdates,
   openReleaseDownload,
@@ -26,6 +28,7 @@ type UpdateState = {
 export function App() {
   const [selectedSlug, setSelectedSlug] = useState("all");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [updateState, setUpdateState] = useState<UpdateState>({ status: "idle" });
   const [kickLoginStatus, setKickLoginStatus] = useState<"checking" | "connected" | "disconnected">("checking");
   const { settings, setSettings } = useSettings();
@@ -40,6 +43,7 @@ export function App() {
   const { activeSupportSlugs, supportTimers, triggerManualMessage } = useSupportBot({
     channels,
     settings,
+    setChannels,
   });
 
   // Check login status on startup
@@ -94,6 +98,21 @@ export function App() {
       current.map((channel) =>
         channel.slug === slug
           ? { ...channel, supportEnabled: channel.supportEnabled === false ? true : false }
+          : channel
+      )
+    );
+  }
+
+  function updateChannelSupportConfig(slug: string, nextConfig: Partial<ChannelSupportConfig>) {
+    setChannels((current) =>
+      current.map((channel) =>
+        channel.slug === slug
+          ? {
+              ...channel,
+              supportConfig: channel.supportConfig
+                ? { ...channel.supportConfig, ...nextConfig }
+                : { messages: ["No apoio"], nextMessageIndex: 0, ...nextConfig },
+            }
           : channel
       )
     );
@@ -216,6 +235,17 @@ export function App() {
             />
           </button>
 
+          {/* Help button */}
+          <button
+            className={`settings-button ${helpOpen ? "settings-button--active" : ""}`}
+            type="button"
+            title="Manual de Ajuda"
+            aria-label="Manual de Ajuda"
+            onClick={() => setHelpOpen((current) => !current)}
+          >
+            <HelpCircle size={19} />
+          </button>
+
           {/* Settings cog */}
           <button
             className={`settings-button ${settingsOpen ? "settings-button--active" : ""}`}
@@ -280,6 +310,8 @@ export function App() {
                   supportTimer={supportTimers[channel.slug]}
                   onSendNow={triggerManualMessage}
                   onToggleSupport={toggleChannelSupport}
+                  onUpdateSupportConfig={updateChannelSupportConfig}
+                  globalIntervalMinutes={settings.supportIntervalMinutes}
                 />
               ))}
             </div>
@@ -299,6 +331,8 @@ export function App() {
           </div>
         ))}
       </div>
+
+      <HelpModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
     </main>
   );
 }

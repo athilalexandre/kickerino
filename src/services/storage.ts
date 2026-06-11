@@ -18,6 +18,43 @@ export const defaultSettings: AppSettings = {
 };
 
 
+function getMessagesFromGlobalText(slug: string, text: string): string[] {
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const specific: string[] = [];
+  const general: string[] = [];
+
+  for (const line of lines) {
+    const sep = line.indexOf("::");
+    if (sep !== -1) {
+      const lineSlug = line.slice(0, sep).trim().toLowerCase();
+      const msg = line.slice(sep + 2).trim();
+      if (lineSlug === slug.toLowerCase() && msg) {
+        specific.push(msg);
+      }
+    } else {
+      if (line) {
+        general.push(line);
+      }
+    }
+  }
+
+  return specific.length > 0 ? specific : general;
+}
+
+function hasSpecificGlobalMessage(slug: string, text: string): boolean {
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  for (const line of lines) {
+    const sep = line.indexOf("::");
+    if (sep !== -1) {
+      const lineSlug = line.slice(0, sep).trim().toLowerCase();
+      if (lineSlug === slug.toLowerCase()) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 export function loadChannels(): KickChannel[] {
   try {
     const raw = localStorage.getItem(CHANNELS_KEY);
@@ -25,13 +62,27 @@ export function loadChannels(): KickChannel[] {
       return [];
     }
 
+    const settings = loadSettings();
     const channels = JSON.parse(raw) as KickChannel[];
     return channels.map((channel) => {
       const supportEnabled = channel.supportEnabled ?? (channel.supportOffline !== undefined ? channel.supportOffline : false);
+      
+      let supportConfig = channel.supportConfig;
+      if (!supportConfig) {
+        const hasSpecific = hasSpecificGlobalMessage(channel.slug, settings.supportMessagesText);
+        const globalMsgs = getMessagesFromGlobalText(channel.slug, settings.supportMessagesText);
+        
+        supportConfig = {
+          messages: hasSpecific && globalMsgs.length > 0 ? globalMsgs : ["No apoio"],
+          nextMessageIndex: 0,
+        };
+      }
+
       return {
         ...channel,
         status: channel.status ?? "unknown",
         supportEnabled,
+        supportConfig,
       };
     });
   } catch {

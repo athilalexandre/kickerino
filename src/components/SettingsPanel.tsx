@@ -160,30 +160,6 @@ export function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
         />
       </div>
 
-      <div className="textarea-row" style={{ gridColumn: "span 4", display: "flex", flexDirection: "column", gap: "6px", marginTop: "6px" }}>
-        <label style={{ fontSize: "12px", fontWeight: "bold", color: "#cfdbdf" }}>
-          Mensagens do Robo (uma por linha ou canal::mensagem)
-        </label>
-        <textarea
-          value={settings.supportMessagesText}
-          style={{
-            width: "100%",
-            height: "100px",
-            padding: "8px 12px",
-            border: "1px solid #2a3338",
-            borderRadius: "8px",
-            color: "#edf4f6",
-            background: "#101417",
-            fontFamily: "inherit",
-            fontSize: "13px",
-            outline: "none",
-            resize: "vertical",
-          }}
-          onChange={(event) =>
-            onChange({ ...settings, supportMessagesText: event.currentTarget.value })
-          }
-        />
-      </div>
     </section>
   );
 }
