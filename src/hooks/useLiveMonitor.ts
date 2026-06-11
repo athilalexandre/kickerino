@@ -25,6 +25,7 @@ export function useLiveMonitor({
   const [isChecking, setIsChecking] = useState(false);
   const [toasts, setToasts] = useState<AppToast[]>([]);
   const channelsRef = useRef(channels);
+  const checkingRef = useRef(false);
 
   useEffect(() => {
     channelsRef.current = channels;
@@ -44,11 +45,15 @@ export function useLiveMonitor({
   }, []);
 
   const refreshAll = useCallback(async () => {
+    if (checkingRef.current) {
+      return;
+    }
     const currentChannels = channelsRef.current;
     if (currentChannels.length === 0) {
       return;
     }
 
+    checkingRef.current = true;
     setIsChecking(true);
     try {
       const results = await checkManyLiveStatuses(
@@ -95,6 +100,7 @@ export function useLiveMonitor({
         }
       }
     } finally {
+      checkingRef.current = false;
       setIsChecking(false);
     }
   }, [pushToast, setChannels, settings.notificationsEnabled, settings.soundEnabled]);

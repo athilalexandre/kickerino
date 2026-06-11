@@ -10,6 +10,7 @@ import { useChannels } from "../hooks/useChannels";
 import { useLiveMonitor } from "../hooks/useLiveMonitor";
 import { useSettings } from "../hooks/useSettings";
 import { useSupportBot } from "../hooks/useSupportBot";
+import type { AppSettings } from "../types/settings";
 import {
   checkForUpdates,
   openReleaseDownload,
@@ -88,15 +89,27 @@ export function App() {
     return false;
   }
 
-  function toggleChannelSupportOffline(slug: string) {
+  function toggleChannelSupport(slug: string) {
     setChannels((current) =>
       current.map((channel) =>
         channel.slug === slug
-          ? { ...channel, supportOffline: !channel.supportOffline }
+          ? { ...channel, supportEnabled: channel.supportEnabled === false ? true : false }
           : channel
       )
     );
   }
+
+  const handleSettingsChange = (nextSettings: AppSettings) => {
+    if (nextSettings.supportBotEnabled !== settings.supportBotEnabled) {
+      setChannels((current) =>
+        current.map((channel) => ({
+          ...channel,
+          supportEnabled: nextSettings.supportBotEnabled,
+        }))
+      );
+    }
+    setSettings(nextSettings);
+  };
 
   async function handleCheckUpdates() {
     setUpdateState({ status: "checking", message: "Checando atualizacoes..." });
@@ -140,7 +153,7 @@ export function App() {
             <h1>Kickerino</h1>
             <p>
               {liveCount} ao vivo
-              {settings.supportBotEnabled && (
+              {activeSupportSlugs.length > 0 && (
                 <span style={{ marginLeft: "8px", color: "#42c773", fontWeight: "bold" }}>
                   • Robo ativo ({activeSupportSlugs.length})
                 </span>
@@ -183,7 +196,7 @@ export function App() {
             type="button"
             title={settings.supportBotEnabled ? "Desativar Robo de Apoio" : "Ativar Robo de Apoio"}
             aria-label="Toggle Robo de Apoio"
-            onClick={() => setSettings({ ...settings, supportBotEnabled: !settings.supportBotEnabled })}
+            onClick={() => handleSettingsChange({ ...settings, supportBotEnabled: !settings.supportBotEnabled })}
           >
             <Bot size={19} />
           </button>
@@ -236,7 +249,7 @@ export function App() {
           />
 
           {settingsOpen && (
-            <SettingsPanel settings={settings} onChange={setSettings} />
+            <SettingsPanel settings={settings} onChange={handleSettingsChange} />
           )}
 
           {updateState.status !== "idle" && updateState.message && (
@@ -263,10 +276,10 @@ export function App() {
                   onRemove={removeAndRetainSelection}
                   onSelect={setSelectedSlug}
                   openLiveOnDoubleClick={settings.openLiveOnDoubleClick}
-                  isSupported={activeSupportSlugs.includes(channel.slug)}
+                  isSupported={channel.supportEnabled !== false}
                   supportTimer={supportTimers[channel.slug]}
                   onSendNow={triggerManualMessage}
-                  onToggleSupportOffline={toggleChannelSupportOffline}
+                  onToggleSupport={toggleChannelSupport}
                 />
               ))}
             </div>

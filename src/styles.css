@@ -130,10 +130,15 @@ button {
   background: #331b1b;
 }
 
-.icon-button--success:hover {
-  border-color: #42c773;
+.icon-button--success {
+  border-color: #38bd6b;
   color: #dfffe9;
   background: #12351f;
+}
+
+.icon-button--success:hover {
+  border-color: #42c773;
+  background: #184429;
 }
 
 .icon-button--warning {
@@ -351,7 +356,17 @@ button {
   color: #ffdcd8;
 }
 
-.toggle-row,
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  min-height: 38px;
+  color: #cfdbdf;
+  font-size: 13px;
+  cursor: pointer;
+}
+
 .field-row {
   display: flex;
   align-items: center;
@@ -372,6 +387,8 @@ button {
   width: 18px;
   height: 18px;
   accent-color: #42c773;
+  margin: 0;
+  cursor: pointer;
 }
 
 .field-row select {

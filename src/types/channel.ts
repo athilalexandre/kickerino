@@ -13,4 +13,5 @@ export type KickChannel = {
   lastWentLiveAt?: number;
   errorMessage?: string;
   supportOffline?: boolean;
+  supportEnabled?: boolean;
 };

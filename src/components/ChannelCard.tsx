@@ -1,4 +1,4 @@
-import { Bot, ExternalLink, Send, Trash2, WifiOff } from "lucide-react";
+import { Bot, ExternalLink, Send, Trash2 } from "lucide-react";
 import { openKickChannel } from "../services/live";
 import type { KickChannel } from "../types/channel";
 import { ChannelAvatar } from "./ChannelAvatar";
@@ -13,7 +13,7 @@ type ChannelCardProps = {
   isSupported?: boolean;
   supportTimer?: number;
   onSendNow?: (slug: string) => void;
-  onToggleSupportOffline?: (slug: string) => void;
+  onToggleSupport?: (slug: string) => void;
 };
 
 export function ChannelCard({
@@ -24,7 +24,7 @@ export function ChannelCard({
   isSupported,
   supportTimer,
   onSendNow,
-  onToggleSupportOffline,
+  onToggleSupport,
 }: ChannelCardProps) {
   const displayName = channel.username ?? channel.slug;
   const stats =
@@ -93,15 +93,15 @@ export function ChannelCard({
             <Send size={18} />
           </button>
         )}
-        {onToggleSupportOffline && (
+        {onToggleSupport && (
           <button
-            className={`icon-button ${channel.supportOffline ? "icon-button--warning" : ""}`}
+            className={`icon-button ${channel.supportEnabled !== false ? "icon-button--success" : ""}`}
             type="button"
-            title={channel.supportOffline ? "Desativar apoio offline" : "Ativar apoio offline"}
-            aria-label={`Alternar apoio offline de ${displayName}`}
-            onClick={() => onToggleSupportOffline(channel.slug)}
+            title={channel.supportEnabled !== false ? "Desativar apoio do robô" : "Ativar apoio do robô"}
+            aria-label={`Alternar apoio do robô para ${displayName}`}
+            onClick={() => onToggleSupport(channel.slug)}
           >
-            <WifiOff size={18} />
+            <Bot size={18} />
           </button>
         )}
         <button

@@ -8,5 +8,6 @@ export type AppSettings = {
   supportMessagesText: string;
   supportPreferredQuality: string;
   supportQualityCheckSeconds: number;
+  supportOfflineChannels: boolean;
 };
 

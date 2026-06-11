@@ -29,6 +29,7 @@ export function useChannels() {
       {
         slug,
         status: "unknown",
+        supportEnabled: false,
       },
     ]);
     return slug;

@@ -24,7 +24,7 @@ function getMessagesForChannel(slug: string, text: string): string[] {
     if (sep !== -1) {
       const lineSlug = line.slice(0, sep).trim().toLowerCase();
       const msg = line.slice(sep + 2).trim();
-      if (lineSlug === slug && msg) {
+      if (lineSlug === slug.toLowerCase() && msg) {
         specific.push(msg);
       }
     } else {
@@ -200,12 +200,31 @@ export function useSupportBot({ channels, settings }: SupportBotParams) {
   const timeoutRef = useRef<number | null>(null);
   const processingRef = useRef<string | null>(null);
 
-  // Redefine activeSupportSlugs: channels that should be supported (all live, plus offline if individual supportOffline is enabled)
-  const activeSupportSlugs = settings.supportBotEnabled
-    ? channels
-        .filter((channel) => channel.supportOffline || channel.status === "live")
-        .map((channel) => channel.slug)
-    : [];
+  // Redefine activeSupportSlugs: channels that should be supported (individual support or global support enabled)
+  const activeSupportSlugs = channels
+    .filter((channel) => {
+      // Se o apoio individual estiver explicitamente desativado, nunca apóia
+      if (channel.supportEnabled === false) {
+        return false;
+      }
+
+      // Se o apoio individual estiver explicitamente ativado no card, apoia sempre (ignorando status)
+      if (channel.supportEnabled === true) {
+        return true;
+      }
+
+      // Se o robô global estiver ativado e o canal estiver no estado padrão (undefined)
+      if (settings.supportBotEnabled) {
+        if (channel.status === "live") {
+          return true;
+        }
+        if (channel.status === "offline") {
+          return settings.supportOfflineChannels;
+        }
+      }
+      return false;
+    })
+    .map((channel) => channel.slug);
 
   const activeSlugsSerialized = activeSupportSlugs.join(",");
 
@@ -257,9 +276,16 @@ export function useSupportBot({ channels, settings }: SupportBotParams) {
     };
   }, []);
 
-  // Clear queue and close windows if disabled globally
+  // Sync queue with active support slugs (remove inactive automatic items)
   useEffect(() => {
-    if (!settings.supportBotEnabled) {
+    setSendQueue((current) =>
+      current.filter((item) => item.isManual || activeSupportSlugs.includes(item.slug))
+    );
+  }, [activeSlugsSerialized]);
+
+  // Close windows if no channels are active and we are not sending manually
+  useEffect(() => {
+    if (activeSupportSlugs.length === 0 && (!isSending || !processingRef.current)) {
       setSendQueue([]);
       setIsSending(false);
       processingRef.current = null;
@@ -269,14 +295,10 @@ export function useSupportBot({ channels, settings }: SupportBotParams) {
       }
       void invoke("close_all_support_windows").catch(() => {});
     }
-  }, [settings.supportBotEnabled]);
+  }, [activeSupportSlugs.length, isSending]);
 
   // Queue worker effect
   useEffect(() => {
-    if (!settings.supportBotEnabled) {
-      return;
-    }
-
     if (isSending || processingRef.current || sendQueue.length === 0) {
       return;
     }
@@ -285,11 +307,33 @@ export function useSupportBot({ channels, settings }: SupportBotParams) {
     const nextSlug = nextItem.slug;
     const isManual = nextItem.isManual;
 
-    // Verify channel exists in our list and is eligible to send (live, or offline sending is enabled, or manual trigger)
+    // Verify channel exists in our list and is eligible to send
     const channel = channels.find((c) => c.slug === nextSlug);
-    if (!channel || (!isManual && !channel.supportOffline && channel.status !== "live")) {
+    if (!channel) {
       setSendQueue((q) => q.slice(1));
       return;
+    }
+
+    if (!isManual) {
+      // Se o apoio individual estiver explicitamente desativado, descarta
+      if (channel.supportEnabled === false) {
+        setSendQueue((q) => q.slice(1));
+        return;
+      }
+
+      // Se o apoio individual estiver explicitamente ativado (verde no card), aceita o envio incondicionalmente
+      const isIndividuallySupported = channel.supportEnabled === true;
+
+      // Se estiver no estado padrão (undefined) e o robô global estiver ligado, valida as regras de status
+      const isGloballySupported =
+        settings.supportBotEnabled &&
+        (channel.status === "live" ||
+          (channel.status === "offline" && settings.supportOfflineChannels));
+
+      if (!isIndividuallySupported && !isGloballySupported) {
+        setSendQueue((q) => q.slice(1));
+        return;
+      }
     }
 
     // Dequeue and mark as sending (using processingRef for immediate synchronous guard)
@@ -357,16 +401,17 @@ export function useSupportBot({ channels, settings }: SupportBotParams) {
     sendQueue,
     isSending,
     channels,
-    settings.supportBotEnabled,
+    activeSupportSlugs.length,
     settings.supportMessagesText,
     settings.supportPreferredQuality,
     settings.supportQualityCheckSeconds,
+    settings.supportOfflineChannels,
   ]);
 
   // Countdown timer loop
   useEffect(() => {
     const slugs = activeSlugsSerialized ? activeSlugsSerialized.split(",") : [];
-    if (!settings.supportBotEnabled || slugs.length === 0) {
+    if (slugs.length === 0) {
       setSupportTimers({});
       return;
     }
@@ -441,7 +486,7 @@ export function useSupportBot({ channels, settings }: SupportBotParams) {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [activeSlugsSerialized, settings.supportBotEnabled, settings.supportIntervalMinutes]);
+  }, [activeSlugsSerialized, settings.supportIntervalMinutes]);
 
   // Cleanup on unmount
   useEffect(() => {

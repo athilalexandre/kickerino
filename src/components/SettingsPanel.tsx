@@ -10,10 +10,6 @@ export function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
   return (
     <section className="settings-panel">
       <label className="toggle-row">
-        <span>
-          <Volume2 size={17} />
-          Som
-        </span>
         <input
           type="checkbox"
           checked={settings.soundEnabled}
@@ -21,13 +17,13 @@ export function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
             onChange({ ...settings, soundEnabled: event.currentTarget.checked })
           }
         />
+        <span>
+          <Volume2 size={17} />
+          Som
+        </span>
       </label>
 
       <label className="toggle-row">
-        <span>
-          <Bell size={17} />
-          Notificacoes
-        </span>
         <input
           type="checkbox"
           checked={settings.notificationsEnabled}
@@ -38,6 +34,10 @@ export function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
             })
           }
         />
+        <span>
+          <Bell size={17} />
+          Notificacoes
+        </span>
       </label>
 
       <label className="field-row">
@@ -59,7 +59,6 @@ export function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
       </label>
 
       <label className="toggle-row">
-        <span>Duplo clique abre live</span>
         <input
           type="checkbox"
           checked={settings.openLiveOnDoubleClick}
@@ -70,16 +69,13 @@ export function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
             })
           }
         />
+        <span>Duplo clique abre live</span>
       </label>
 
       {/* Robô de Apoio Settings */}
       <div style={{ gridColumn: "span 4", borderTop: "1px solid #28343a", margin: "8px 0" }} />
 
       <label className="toggle-row">
-        <span>
-          <Bot size={17} />
-          Robo de Apoio
-        </span>
         <input
           type="checkbox"
           checked={settings.supportBotEnabled}
@@ -87,6 +83,26 @@ export function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
             onChange({ ...settings, supportBotEnabled: event.currentTarget.checked })
           }
         />
+        <span>
+          <Bot size={17} />
+          Robo de Apoio
+        </span>
+      </label>
+
+      <label className="toggle-row">
+        <input
+          type="checkbox"
+          checked={settings.supportOfflineChannels}
+          onChange={(event) =>
+            onChange({
+              ...settings,
+              supportOfflineChannels: event.currentTarget.checked,
+            })
+          }
+        />
+        <span>
+          Apoiar offline
+        </span>
       </label>
 
       <label className="field-row">

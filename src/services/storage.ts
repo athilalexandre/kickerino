@@ -14,6 +14,7 @@ export const defaultSettings: AppSettings = {
   supportMessagesText: "crisjuliano:: No apoio\nsche:: much fish, takes love!",
   supportPreferredQuality: "160p",
   supportQualityCheckSeconds: 60,
+  supportOfflineChannels: false,
 };
 
 
@@ -25,10 +26,14 @@ export function loadChannels(): KickChannel[] {
     }
 
     const channels = JSON.parse(raw) as KickChannel[];
-    return channels.map((channel) => ({
-      ...channel,
-      status: channel.status ?? "unknown",
-    }));
+    return channels.map((channel) => {
+      const supportEnabled = channel.supportEnabled ?? (channel.supportOffline !== undefined ? channel.supportOffline : false);
+      return {
+        ...channel,
+        status: channel.status ?? "unknown",
+        supportEnabled,
+      };
+    });
   } catch {
     return [];
   }
