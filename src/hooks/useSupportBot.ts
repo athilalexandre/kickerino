@@ -402,7 +402,7 @@ export function useSupportBot({ channels, settings }: SupportBotParams) {
         const slugsToQueue: string[] = [];
 
         for (const slug of Object.keys(next)) {
-          const maxSecs = settings.supportIntervalMinutes;
+          const maxSecs = settings.supportIntervalMinutes * 60;
 
           // Clamp timer value if it exceeds the new limit (e.g. settings changed)
           if (next[slug] > maxSecs && next[slug] > 5) {
@@ -459,7 +459,7 @@ export function useSupportBot({ channels, settings }: SupportBotParams) {
       if (prev[slug] !== undefined) {
         return {
           ...prev,
-          [slug]: settings.supportIntervalMinutes,
+          [slug]: settings.supportIntervalMinutes * 60,
         };
       }
       return prev;
