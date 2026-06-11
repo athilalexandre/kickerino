@@ -109,7 +109,7 @@ export function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
       </label>
 
       <label className="field-row">
-        <span>Intervalo Chat (min)</span>
+        <span>Intervalo Chat (seg)</span>
         <input
           type="number"
           min={1}

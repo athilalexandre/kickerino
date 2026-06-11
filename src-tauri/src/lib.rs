@@ -188,17 +188,39 @@ fn latest_installer_url(json: &Value) -> Option<String> {
     })
 }
 
+static LAST_OPEN: std::sync::Mutex<Option<(String, std::time::Instant)>> = std::sync::Mutex::new(None);
+
 #[tauri::command]
 async fn open_support_window(
     app: AppHandle,
     slug: String,
     js_script: String,
 ) -> Result<(), String> {
+    // Evitar cliques duplos / chamadas duplicadas consecutivas no mesmo segundo
+    {
+        let mut last_open = LAST_OPEN.lock().unwrap();
+        let now = std::time::Instant::now();
+        if let Some((ref last_slug, last_time)) = *last_open {
+            if last_slug == &slug && now.duration_since(last_time) < std::time::Duration::from_millis(1500) {
+                println!("[Rust] Ignorando chamada duplicada para abrir suporte de '{}' dentro de 1.5s", slug);
+                return Ok(());
+            }
+        }
+        *last_open = Some((slug.clone(), now));
+    }
+
     let label = "support-worker";
 
     // If window already exists, close it first to recreate with new script
     if let Some(w) = app.get_webview_window(label) {
         let _ = w.close();
+        // Aguarda a janela ser destruida antes de criar uma nova
+        for _ in 0..20 {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            if app.get_webview_window(label).is_none() {
+                break;
+            }
+        }
     }
 
     let url_str = format!("https://kick.com/popout/{}/chat", slug);
@@ -212,7 +234,7 @@ async fn open_support_window(
     .title(format!("Kickerino Apoio - {}", slug))
     .inner_size(300.0, 300.0) // Small size for background execution
     .position(-2000.0, -2000.0) // Position off-screen (negative coords are not clamped by Windows)
-    .visible(true)
+    .visible(false)
     .decorations(false) // Borderless/No title bar
     .skip_taskbar(true) // Hide from taskbar
     .initialization_script(&js_script);

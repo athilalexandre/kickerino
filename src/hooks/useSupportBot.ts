@@ -47,6 +47,13 @@ function buildSupportScript(
 ): string {
   return `
     (function() {
+      if (window.self !== window.top) {
+        return;
+      }
+      if (!window.location.href.includes('/popout/')) {
+        return;
+      }
+
       const CONFIG = {
         messages: ${JSON.stringify(messages)},
       };
@@ -191,6 +198,7 @@ export function useSupportBot({ channels, settings }: SupportBotParams) {
   const [isSending, setIsSending] = useState<boolean>(false);
   const [supportTimers, setSupportTimers] = useState<Record<string, number>>({});
   const timeoutRef = useRef<number | null>(null);
+  const processingRef = useRef<string | null>(null);
 
   // Redefine activeSupportSlugs: channels that should be supported (all live, plus offline if individual supportOffline is enabled)
   const activeSupportSlugs = settings.supportBotEnabled
@@ -210,6 +218,7 @@ export function useSupportBot({ channels, settings }: SupportBotParams) {
       const closedLabel = event.payload;
       if (closedLabel === "support-worker") {
         setIsSending(false);
+        processingRef.current = null;
         if (timeoutRef.current) {
           clearTimeout(timeoutRef.current as any);
           timeoutRef.current = null;
@@ -253,6 +262,7 @@ export function useSupportBot({ channels, settings }: SupportBotParams) {
     if (!settings.supportBotEnabled) {
       setSendQueue([]);
       setIsSending(false);
+      processingRef.current = null;
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current as any);
         timeoutRef.current = null;
@@ -267,7 +277,7 @@ export function useSupportBot({ channels, settings }: SupportBotParams) {
       return;
     }
 
-    if (isSending || sendQueue.length === 0) {
+    if (isSending || processingRef.current || sendQueue.length === 0) {
       return;
     }
 
@@ -282,7 +292,8 @@ export function useSupportBot({ channels, settings }: SupportBotParams) {
       return;
     }
 
-    // Dequeue and mark as sending
+    // Dequeue and mark as sending (using processingRef for immediate synchronous guard)
+    processingRef.current = nextSlug;
     setIsSending(true);
     setSendQueue((q) => q.slice(1));
 
@@ -303,6 +314,7 @@ export function useSupportBot({ channels, settings }: SupportBotParams) {
 
       if (!chatroomId) {
         console.error(`[useSupportBot] Nao foi possivel obter o Chatroom ID para ${nextSlug}. Abortando envio.`);
+        processingRef.current = null;
         setIsSending(false);
         return;
       }
@@ -329,11 +341,13 @@ export function useSupportBot({ channels, settings }: SupportBotParams) {
           invoke("close_support_window", { slug: nextSlug })
             .catch((err) => console.error(`[Kickerino] Erro ao fechar janela para ${nextSlug}:`, err))
             .finally(() => {
+              processingRef.current = null;
               setIsSending(false);
             });
         }, 20000) as any;
       } catch (err) {
         console.error(`[Kickerino] Falha ao abrir janela para ${nextSlug}:`, err);
+        processingRef.current = null;
         setIsSending(false);
       }
     };
@@ -388,7 +402,7 @@ export function useSupportBot({ channels, settings }: SupportBotParams) {
         const slugsToQueue: string[] = [];
 
         for (const slug of Object.keys(next)) {
-          const maxSecs = settings.supportIntervalMinutes * 60;
+          const maxSecs = settings.supportIntervalMinutes;
 
           // Clamp timer value if it exceeds the new limit (e.g. settings changed)
           if (next[slug] > maxSecs && next[slug] > 5) {
@@ -445,7 +459,7 @@ export function useSupportBot({ channels, settings }: SupportBotParams) {
       if (prev[slug] !== undefined) {
         return {
           ...prev,
-          [slug]: settings.supportIntervalMinutes * 60,
+          [slug]: settings.supportIntervalMinutes,
         };
       }
       return prev;
