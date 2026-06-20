@@ -611,7 +611,14 @@ async fn fetch_missxss_watch_time(app: AppHandle, platform: String, username: St
 }
 
 #[tauri::command]
-async fn fetch_missxss_top_watch_time(app: AppHandle, limit: Option<u32>, platform: Option<String>) -> Result<serde_json::Value, String> {
+async fn fetch_missxss_top_watch_time(
+    app: AppHandle,
+    limit: Option<u32>,
+    platform: Option<String>,
+    date_from: Option<String>,
+    date_to: Option<String>,
+    day: Option<String>,
+) -> Result<serde_json::Value, String> {
     let api_key = get_effective_api_key(&app)?;
 
     let client = reqwest::Client::new();
@@ -622,6 +629,15 @@ async fn fetch_missxss_top_watch_time(app: AppHandle, limit: Option<u32>, platfo
     }
     if let Some(p) = platform {
         body.insert("platform".to_string(), serde_json::Value::String(p));
+    }
+    if let Some(df) = date_from {
+        body.insert("date_from".to_string(), serde_json::Value::String(df));
+    }
+    if let Some(dt) = date_to {
+        body.insert("date_to".to_string(), serde_json::Value::String(dt));
+    }
+    if let Some(d) = day {
+        body.insert("day".to_string(), serde_json::Value::String(d));
     }
 
     let response = client

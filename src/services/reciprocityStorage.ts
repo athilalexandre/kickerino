@@ -1,50 +1,70 @@
 import type {
-  FriendChannel,
-  WatchTimeSnapshot,
+  ViewerStats,
+  ClosedWeekRecord,
   ReciprocitySettings,
   RankingResult,
   Platform,
 } from "../types/reciprocity";
 
-const FRIENDS_KEY = "kickerino.reciprocity.friends";
-const SNAPSHOTS_KEY = "kickerino.reciprocity.snapshots";
+const BLOCKED_KEY = "kickerino.reciprocity.blocked";
+const CLOSED_WEEKS_KEY = "kickerino.reciprocity.closed_weeks";
+const MONDAY_KEY = "kickerino.reciprocity.current_week_monday";
+const CURRENT_DATA_KEY = "kickerino.reciprocity.current_week_data";
 const SETTINGS_KEY = "kickerino.reciprocity.settings";
+const PREV_RANKS_KEY = "kickerino.reciprocity.previous_ranks";
 
 export const defaultReciprocitySettings: ReciprocitySettings = {
   pollingIntervalMinutes: 60,
-  defaultWindow: "7d",
-  messageBonusWeight: 2,
-  messageDampingType: "sqrt",
-  activeThresholdMinutes: 60, // Active threshold for 7 days
-  droppingThresholdMinutes: 15, // Dropping threshold for 7 days
+  minutesPerPoint: 60, // 60 minutes = 1 point
 };
 
 // --- Storage Actions ---
 
-export function loadFriendChannels(): FriendChannel[] {
+export function loadBlockedUsers(): string[] {
   try {
-    const raw = localStorage.getItem(FRIENDS_KEY);
+    const raw = localStorage.getItem(BLOCKED_KEY);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
   }
 }
 
-export function saveFriendChannels(channels: FriendChannel[]): void {
-  localStorage.setItem(FRIENDS_KEY, JSON.stringify(channels));
+export function saveBlockedUsers(users: string[]): void {
+  localStorage.setItem(BLOCKED_KEY, JSON.stringify(users));
 }
 
-export function loadSnapshots(): WatchTimeSnapshot[] {
+export function loadClosedWeeks(): ClosedWeekRecord[] {
   try {
-    const raw = localStorage.getItem(SNAPSHOTS_KEY);
+    const raw = localStorage.getItem(CLOSED_WEEKS_KEY);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
   }
 }
 
-export function saveSnapshots(snapshots: WatchTimeSnapshot[]): void {
-  localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(snapshots));
+export function saveClosedWeeks(weeks: ClosedWeekRecord[]): void {
+  localStorage.setItem(CLOSED_WEEKS_KEY, JSON.stringify(weeks));
+}
+
+export function loadCurrentWeekMonday(): string | null {
+  return localStorage.getItem(MONDAY_KEY);
+}
+
+export function saveCurrentWeekMonday(mondayStr: string): void {
+  localStorage.setItem(MONDAY_KEY, mondayStr);
+}
+
+export function loadCurrentWeekData(): ViewerStats[] {
+  try {
+    const raw = localStorage.getItem(CURRENT_DATA_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveCurrentWeekData(data: ViewerStats[]): void {
+  localStorage.setItem(CURRENT_DATA_KEY, JSON.stringify(data));
 }
 
 export function loadReciprocitySettings(): ReciprocitySettings {
@@ -60,239 +80,242 @@ export function saveReciprocitySettings(settings: ReciprocitySettings): void {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
 }
 
-// --- Snapshot Pruning ---
-
-export function pruneSnapshots(snapshots: WatchTimeSnapshot[]): WatchTimeSnapshot[] {
-  const thirtyOneDaysAgo = new Date();
-  thirtyOneDaysAgo.setDate(thirtyOneDaysAgo.getDate() - 31);
-  const cutoffTime = thirtyOneDaysAgo.getTime();
-
-  // We want to keep:
-  // 1. The very first snapshot for each friend (baseline for all-time)
-  // 2. All snapshots newer than 31 days
-  const earliestMap = new Map<string, WatchTimeSnapshot>();
-  for (const snap of snapshots) {
-    const existing = earliestMap.get(snap.friendChannelId);
-    if (!existing || new Date(snap.capturedAt).getTime() < new Date(existing.capturedAt).getTime()) {
-      earliestMap.set(snap.friendChannelId, snap);
-    }
+export function loadPreviousRanks(): { [key: string]: number } {
+  try {
+    const raw = localStorage.getItem(PREV_RANKS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
   }
+}
 
-  return snapshots.filter((snap) => {
-    const isEarliest = earliestMap.get(snap.friendChannelId)?.id === snap.id;
-    const isRecent = new Date(snap.capturedAt).getTime() >= cutoffTime;
-    return isEarliest || isRecent;
-  });
+export function savePreviousRanks(ranks: { [key: string]: number }): void {
+  localStorage.setItem(PREV_RANKS_KEY, JSON.stringify(ranks));
+}
+
+// --- Date Helpers ---
+
+export function getLocalDateString(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export function getCurrentWeekMonday(now = new Date()): Date {
+  const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday...
+  const distanceToMonday = currentDay === 0 ? -6 : 1 - currentDay;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + distanceToMonday);
+  monday.setHours(0, 0, 0, 0);
+  return monday;
+}
+
+export function getWeekDateRange(monday: Date) {
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  return {
+    start: getLocalDateString(monday),
+    end: getLocalDateString(sunday),
+  };
+}
+
+export function getWeekRangeFromMondayStr(mondayStr: string) {
+  const date = new Date(mondayStr + "T00:00:00");
+  return getWeekDateRange(date);
 }
 
 // --- Ranking Calculations ---
 
-export function calculateScore(
-  watchTime: number,
-  messages: number,
-  settings: ReciprocitySettings
-): number {
-  let dampedMessages = messages;
-  if (settings.messageDampingType === "sqrt") {
-    dampedMessages = Math.sqrt(messages);
-  } else if (settings.messageDampingType === "capped") {
-    dampedMessages = Math.min(messages, 100);
-  }
-  return watchTime + dampedMessages * settings.messageBonusWeight;
-}
-
-export function getWindowDurationMs(window: "24h" | "7d" | "30d" | "all"): number {
-  switch (window) {
-    case "24h":
-      return 24 * 60 * 60 * 1000;
-    case "7d":
-      return 7 * 24 * 60 * 60 * 1000;
-    case "30d":
-      return 30 * 24 * 60 * 60 * 1000;
-    case "all":
-      return Infinity;
-  }
-}
-
-export function getWindowScale(window: "24h" | "7d" | "30d" | "all"): number {
-  switch (window) {
-    case "24h":
-      return 1 / 7;
-    case "7d":
-      return 1;
-    case "30d":
-      return 30 / 7;
-    case "all":
-      return 10; // baseline scale for all-time threshold
-  }
-}
-
-/**
- * Helper to calculate stats (watchTime, messageCount, score) for a friend channel at a specific reference time.
- */
-function getStatsAtTime(
-  friendId: string,
-  friendSnapshots: WatchTimeSnapshot[],
-  referenceTimeMs: number,
-  window: "24h" | "7d" | "30d" | "all",
-  settings: ReciprocitySettings
-) {
-  // Filter snapshots up to the reference time
-  const snapsBeforeRef = friendSnapshots
-    .filter((s) => new Date(s.capturedAt).getTime() <= referenceTimeMs)
-    .sort((a, b) => new Date(a.capturedAt).getTime() - new Date(b.capturedAt).getTime());
-
-  if (snapsBeforeRef.length === 0) {
-    return null;
-  }
-
-  const latestSnap = snapsBeforeRef[snapsBeforeRef.length - 1];
-  const windowDurationMs = getWindowDurationMs(window);
-
-  // Find start snapshot (closest to cutoff)
-  let startSnap = snapsBeforeRef[0];
-  if (windowDurationMs !== Infinity) {
-    const cutoffTimeMs = referenceTimeMs - windowDurationMs;
-    // Find the snapshot closest to cutoffTimeMs
-    let bestDiff = Infinity;
-    for (const snap of snapsBeforeRef) {
-      const diff = Math.abs(new Date(snap.capturedAt).getTime() - cutoffTimeMs);
-      if (diff < bestDiff) {
-        bestDiff = diff;
-        startSnap = snap;
-      }
-    }
-  }
-
-  const watchTimeMinutes = Math.max(0, latestSnap.watchTimeMinutes - startSnap.watchTimeMinutes);
-  const messageCount = Math.max(0, latestSnap.messageCount - startSnap.messageCount);
-  const score = calculateScore(watchTimeMinutes, messageCount, settings);
-
-  const durationTrackedMs = new Date(latestSnap.capturedAt).getTime() - new Date(snapsBeforeRef[0].capturedAt).getTime();
-  const isNew = snapsBeforeRef.length < 2 || durationTrackedMs < 20 * 60 * 60 * 1000; // less than 20 hours of data
-
-  return {
-    watchTimeMinutes,
-    messageCount,
-    score,
-    isNew,
-    lastChecked: latestSnap.capturedAt,
-  };
-}
-
 export function calculateRankings(
-  channels: FriendChannel[],
-  snapshots: WatchTimeSnapshot[],
-  window: "24h" | "7d" | "30d" | "all",
+  currentWeekData: ViewerStats[],
+  closedWeeks: ClosedWeekRecord[],
+  blockedUsers: string[],
+  mode: "week" | "eternal" | string, // mode can be "week", "eternal", or a specific YYYY-MM-DD Monday string
   settings: ReciprocitySettings,
-  now = new Date()
+  previousRanks: { [key: string]: number } = {}
 ): RankingResult[] {
-  const enabledChannels = channels.filter((c) => c.enabled);
-  const nowMs = now.getTime();
+  const lowerBlocked = blockedUsers.map((u) => u.toLowerCase());
 
-  // 1. Calculate current stats and scores
-  const currentResults = enabledChannels.map((channel) => {
-    const friendSnaps = snapshots.filter((s) => s.friendChannelId === channel.id);
-    const stats = getStatsAtTime(channel.id, friendSnaps, nowMs, window, settings);
+  const isBlocked = (platform: Platform, username: string) => {
+    const key = `${platform.toLowerCase()}:${username.toLowerCase()}`;
+    return lowerBlocked.includes(key);
+  };
 
-    return {
-      channel,
-      stats,
-    };
-  });
+  if (mode === "week") {
+    // 1. Weekly Ranking (Este Week)
+    const filtered = currentWeekData.filter((v) => !isBlocked(v.platform, v.username));
+    
+    const results = filtered.map((v) => {
+      const points = Math.floor(v.watchTimeMinutes / settings.minutesPerPoint);
+      // Status rules: Active if points >= 7 (approx 1h per day), Dropping if 1-6 points, Inactive if 0.
+      let status: "Active" | "Dropping" | "Inactive" | "New" = "Inactive";
+      if (points >= 7) {
+        status = "Active";
+      } else if (points > 0) {
+        status = "Dropping";
+      }
 
-  // 2. Rank channels by score (descending)
-  // Channels without stats go to the bottom
-  const rankedCurrent = [...currentResults]
-    .filter((r) => r.stats !== null)
-    .sort((a, b) => (b.stats?.score ?? 0) - (a.stats?.score ?? 0));
-
-  // 3. Calculate previous stats to determine previous ranking (for trend calculation)
-  // We look at the state 1 sync interval ago (default 1 hour, or pollingIntervalMinutes)
-  const prevTimeMs = nowMs - settings.pollingIntervalMinutes * 60 * 1000;
-  const prevResults = enabledChannels.map((channel) => {
-    const friendSnaps = snapshots.filter((s) => s.friendChannelId === channel.id);
-    const stats = getStatsAtTime(channel.id, friendSnaps, prevTimeMs, window, settings);
-    return {
-      channelId: channel.id,
-      stats,
-    };
-  });
-
-  const rankedPrev = prevResults
-    .filter((r) => r.stats !== null)
-    .sort((a, b) => (b.stats?.score ?? 0) - (a.stats?.score ?? 0));
-
-  const prevRankMap = new Map<string, number>();
-  rankedPrev.forEach((item, index) => {
-    prevRankMap.set(item.channelId, index + 1);
-  });
-
-  // 4. Build final results
-  const scale = getWindowScale(window);
-  const windowActiveThreshold = settings.activeThresholdMinutes * scale;
-  const windowDroppingThreshold = settings.droppingThresholdMinutes * scale;
-
-  return currentResults.map((item) => {
-    const channel = item.channel;
-    const stats = item.stats;
-
-    if (!stats) {
       return {
-        friendChannelId: channel.id,
-        displayName: channel.displayName,
-        platform: channel.platform,
-        username: channel.username,
-        watchTimeMinutes: 0,
-        messageCount: 0,
-        score: 0,
-        rank: 999,
-        status: "New" as const,
-        trendDirection: "stable" as const,
-        lastChecked: channel.createdAt,
+        username: v.username,
+        displayName: v.displayName,
+        platform: v.platform,
+        watchTimeMinutes: v.watchTimeMinutes,
+        messageCount: v.messageCount,
+        points,
+        status,
       };
-    }
+    });
 
-    // Determine current rank
-    const currentRank = rankedCurrent.findIndex((r) => r.channel.id === channel.id) + 1;
+    // Sort by watchTimeMinutes descending (and messages for tie break)
+    const sorted = results.sort((a, b) => b.watchTimeMinutes - a.watchTimeMinutes || b.messageCount - a.messageCount);
 
-    // Determine trend direction
-    const prevRank = prevRankMap.get(channel.id);
-    let trendDirection: "up" | "down" | "stable" = "stable";
-    if (prevRank !== undefined && currentRank > 0) {
-      if (currentRank < prevRank) {
-        trendDirection = "up";
-      } else if (currentRank > prevRank) {
-        trendDirection = "down";
+    return sorted.map((item, idx) => {
+      const rank = idx + 1;
+      const key = `${item.platform.toLowerCase()}:${item.username.toLowerCase()}`;
+      const prevRank = previousRanks[key];
+
+      let trendDirection: "up" | "down" | "stable" = "stable";
+      if (prevRank !== undefined) {
+        if (rank < prevRank) trendDirection = "up";
+        else if (rank > prevRank) trendDirection = "down";
+      }
+
+      return {
+        ...item,
+        rank,
+        trendDirection,
+      };
+    });
+
+  } else if (mode === "eternal") {
+    // 2. Eternal Ranking (Acumulado)
+    // Sum points across all closed weeks + current week
+    const eternalMap = new Map<
+      string,
+      {
+        username: string;
+        displayName: string;
+        platform: Platform;
+        points: number;
+        watchTimeMinutes: number;
+        messageCount: number;
+        currentWeekPoints: number;
+      }
+    >();
+
+    const getOrInit = (platform: Platform, username: string, displayName: string) => {
+      const key = `${platform.toLowerCase()}:${username.toLowerCase()}`;
+      let item = eternalMap.get(key);
+      if (!item) {
+        item = {
+          username,
+          displayName,
+          platform,
+          points: 0,
+          watchTimeMinutes: 0,
+          messageCount: 0,
+          currentWeekPoints: 0,
+        };
+        eternalMap.set(key, item);
+      }
+      return item;
+    };
+
+    // Add closed weeks points
+    for (const week of closedWeeks) {
+      for (const key in week.viewerPoints) {
+        const vp = week.viewerPoints[key];
+        if (isBlocked(vp.platform, vp.username)) continue;
+
+        const item = getOrInit(vp.platform, vp.username, vp.displayName);
+        item.points += vp.points;
+        item.watchTimeMinutes += vp.watchTimeMinutes;
+        item.messageCount += vp.messageCount;
       }
     }
 
-    // Determine status label
-    let status: "Active" | "Dropping" | "Inactive" | "New" = "Inactive";
-    if (stats.isNew) {
-      status = "New";
-    } else if (stats.watchTimeMinutes >= windowActiveThreshold) {
-      status = "Active";
-    } else if (stats.watchTimeMinutes > windowDroppingThreshold) {
-      status = "Dropping";
-    } else if (stats.watchTimeMinutes === 0) {
-      status = "Inactive";
-    } else {
-      status = "Dropping";
+    // Add current week points
+    for (const v of currentWeekData) {
+      if (isBlocked(v.platform, v.username)) continue;
+
+      const item = getOrInit(v.platform, v.username, v.displayName);
+      const points = Math.floor(v.watchTimeMinutes / settings.minutesPerPoint);
+      item.points += points;
+      item.currentWeekPoints = points;
+      item.watchTimeMinutes += v.watchTimeMinutes;
+      item.messageCount += v.messageCount;
     }
 
-    return {
-      friendChannelId: channel.id,
-      displayName: channel.displayName,
-      platform: channel.platform,
-      username: channel.username,
-      watchTimeMinutes: stats.watchTimeMinutes,
-      messageCount: stats.messageCount,
-      score: Math.round(stats.score * 10) / 10, // round to 1 decimal
-      rank: currentRank,
-      status,
-      trendDirection,
-      lastChecked: stats.lastChecked,
-    };
-  });
+    const results = Array.from(eternalMap.values()).map((item) => {
+      // Current week status applies: Active if points earned this week >= 7
+      let status: "Active" | "Dropping" | "Inactive" | "New" = "Inactive";
+      if (item.currentWeekPoints >= 7) {
+        status = "Active";
+      } else if (item.currentWeekPoints > 0) {
+        status = "Dropping";
+      }
+
+      return {
+        username: item.username,
+        displayName: item.displayName,
+        platform: item.platform,
+        watchTimeMinutes: item.watchTimeMinutes,
+        messageCount: item.messageCount,
+        points: item.points,
+        status,
+      };
+    });
+
+    // Sort by eternal points descending
+    const sorted = results.sort((a, b) => b.points - a.points || b.watchTimeMinutes - a.watchTimeMinutes);
+
+    return sorted.map((item, idx) => {
+      const rank = idx + 1;
+      const key = `${item.platform.toLowerCase()}:${item.username.toLowerCase()}`;
+      const prevRank = previousRanks[key];
+
+      let trendDirection: "up" | "down" | "stable" = "stable";
+      if (prevRank !== undefined) {
+        if (rank < prevRank) trendDirection = "up";
+        else if (rank > prevRank) trendDirection = "down";
+      }
+
+      return {
+        ...item,
+        rank,
+        trendDirection,
+      };
+    });
+
+  } else {
+    // 3. Historical Closed Week View
+    const targetWeek = closedWeeks.find((w) => w.weekMonday === mode);
+    if (!targetWeek) {
+      return [];
+    }
+
+    const results = Object.values(targetWeek.viewerPoints)
+      .filter((v) => !isBlocked(v.platform, v.username))
+      .map((v) => {
+        return {
+          username: v.username,
+          displayName: v.displayName,
+          platform: v.platform,
+          watchTimeMinutes: v.watchTimeMinutes,
+          messageCount: v.messageCount,
+          points: v.points,
+          status: "Inactive" as const, // Past weeks are inactive by definition
+          trendDirection: "stable" as const,
+        };
+      });
+
+    // Sort by points descending
+    const sorted = results.sort((a, b) => b.points - a.points || b.watchTimeMinutes - a.watchTimeMinutes);
+
+    return sorted.map((item, idx) => ({
+      ...item,
+      rank: idx + 1,
+    }));
+  }
 }

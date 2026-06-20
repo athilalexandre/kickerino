@@ -1,47 +1,43 @@
-export type Platform = 'Kick' | 'Twitch' | 'YouTube' | 'TikTok';
+export type Platform = "Kick" | "Twitch" | "YouTube" | "TikTok";
 
-export interface FriendChannel {
-  id: string;
+export interface ViewerStats {
+  userId?: string;
+  username: string;
   displayName: string;
   platform: Platform;
-  username: string;
-  notes?: string;
-  enabled: boolean;
-  createdAt: string; // ISO timestamp
-  updatedAt: string; // ISO timestamp
-}
-
-export interface WatchTimeSnapshot {
-  id: string;
-  friendChannelId: string;
-  platform: Platform;
-  username: string;
   watchTimeMinutes: number;
   messageCount: number;
-  capturedAt: string; // ISO timestamp
 }
 
-export type MessageDampingType = 'none' | 'sqrt' | 'capped';
+export interface WeekViewerPoints {
+  username: string;
+  displayName: string;
+  platform: Platform;
+  points: number;
+  watchTimeMinutes: number;
+  messageCount: number;
+}
+
+export interface ClosedWeekRecord {
+  weekMonday: string; // YYYY-MM-DD
+  viewerPoints: {
+    [userKey: string]: WeekViewerPoints; // userKey is "platform:username"
+  };
+}
 
 export interface ReciprocitySettings {
   pollingIntervalMinutes: number;
-  defaultWindow: '24h' | '7d' | '30d' | 'all';
-  messageBonusWeight: number;
-  messageDampingType: MessageDampingType;
-  activeThresholdMinutes: number; // For the default 7d window, will be scaled for other windows
-  droppingThresholdMinutes: number; // For the default 7d window, will be scaled for other windows
+  minutesPerPoint: number; // e.g. 60 (1 hour = 1 point)
 }
 
 export interface RankingResult {
-  friendChannelId: string;
+  username: string;
   displayName: string;
   platform: Platform;
-  username: string;
   watchTimeMinutes: number;
   messageCount: number;
-  score: number;
+  points: number;
   rank: number;
-  status: 'Active' | 'Dropping' | 'Inactive' | 'New';
-  trendDirection: 'up' | 'down' | 'stable';
-  lastChecked: string;
+  status: "Active" | "Dropping" | "Inactive" | "New";
+  trendDirection: "up" | "down" | "stable";
 }

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useReciprocity } from "../../hooks/useReciprocity";
-import { FriendManager } from "./FriendManager";
+import { BlockedUserManager } from "./BlockedUserManager";
 import { FriendDetails } from "./FriendDetails";
 import { ReciprocitySettingsPanel } from "./ReciprocitySettingsPanel";
 import {
@@ -9,7 +9,6 @@ import {
   AlertTriangle,
   RefreshCw,
   Sliders,
-  Settings,
   ArrowUp,
   ArrowDown,
   Minus,
@@ -18,23 +17,24 @@ import {
   ChevronRight,
   TrendingDown,
   UserCheck,
+  EyeOff,
+  Calendar,
 } from "lucide-react";
-import type { FriendChannel } from "../../types/reciprocity";
 
 export function ReciprocityDashboard() {
   const {
-    friends,
-    snapshots,
+    blockedUsers,
+    closedWeeks,
+    currentWeekMondayStr,
+    currentWeekData,
     settings,
     rankings,
     isSyncing,
     syncError,
-    selectedWindow,
-    setSelectedWindow,
-    addFriend,
-    updateFriend,
-    removeFriend,
-    toggleFriendEnabled,
+    selectedMode,
+    setSelectedMode,
+    blockUser,
+    unblockUser,
     updateSettings,
     syncWatchTime,
     hasApiKey,
@@ -43,39 +43,38 @@ export function ReciprocityDashboard() {
   } = useReciprocity();
 
   const [activeScreen, setActiveScreen] = useState<"ranking" | "manage" | "settings">("ranking");
-  const [selectedFriendId, setSelectedFriendId] = useState<string | null>(null);
+  const [selectedViewer, setSelectedViewer] = useState<{ username: string; platform: any } | null>(null);
 
   // Overview calculations
-  const totalTracked = friends.length;
+  const totalTracked = rankings.length;
   const activeCount = rankings.filter((r) => r.status === "Active").length;
   const droppingCount = rankings.filter((r) => r.status === "Dropping").length;
-  const inactiveCount = rankings.filter((r) => r.status === "Inactive").length;
+  const blockedCount = blockedUsers.length;
 
-  const handleOpenDetails = (id: string) => {
-    setSelectedFriendId(id);
+  const handleOpenDetails = (username: string, platform: any) => {
+    setSelectedViewer({ username, platform });
   };
 
-  const selectedFriend = friends.find((f) => f.id === selectedFriendId);
-
-  // If viewing details of a friend, overlay or display it
-  if (selectedFriendId && selectedFriend) {
+  // If viewing details of a viewer, render it
+  if (selectedViewer) {
     return (
       <FriendDetails
-        friend={selectedFriend}
-        snapshots={snapshots}
+        username={selectedViewer.username}
+        platform={selectedViewer.platform}
+        closedWeeks={closedWeeks}
+        currentWeekData={currentWeekData}
         rankings={rankings}
-        onClose={() => setSelectedFriendId(null)}
+        settings={settings}
+        onClose={() => setSelectedViewer(null)}
       />
     );
   }
 
   if (activeScreen === "manage") {
     return (
-      <FriendManager
-        friends={friends}
-        onAdd={addFriend}
-        onUpdate={updateFriend}
-        onRemove={removeFriend}
+      <BlockedUserManager
+        blockedUsers={blockedUsers}
+        onUnblock={unblockUser}
         onClose={() => setActiveScreen("ranking")}
       />
     );
@@ -100,7 +99,7 @@ export function ReciprocityDashboard() {
       <div className="reciprocity-dashboard__header">
         <div>
           <h2>Painel de Reciprocidade</h2>
-          <p>Monitore quem está apoiando e interagindo na sua live.</p>
+          <p>Monitore quem está apoiando e interagindo na sua live através da MissXss.</p>
         </div>
 
         <div className="header-actions">
@@ -116,11 +115,12 @@ export function ReciprocityDashboard() {
 
           <button
             type="button"
-            className="btn btn--primary"
+            className="btn btn--secondary"
             onClick={() => setActiveScreen("manage")}
+            title="Ver canais ocultados"
           >
-            <Users size={16} />
-            <span>Gerenciar Amigos</span>
+            <EyeOff size={16} />
+            <span>Ocultados ({blockedCount})</span>
           </button>
 
           <button
@@ -143,8 +143,7 @@ export function ReciprocityDashboard() {
             <strong>Erro de Sincronização:</strong>
             <p>{syncError}</p>
             <span className="helper">
-              Certifique-se de configurar a variável de ambiente <code>MISSXSS_API_KEY</code> no
-              seu sistema e reiniciar o aplicativo para aplicar as alterações.
+              Certifique-se de configurar a sua Chave API da MissXss no botão <strong>Configurações</strong> acima ou declare-a como variável de ambiente no seu sistema.
             </span>
           </div>
         </div>
@@ -157,7 +156,7 @@ export function ReciprocityDashboard() {
             <Users size={22} />
           </div>
           <div className="summary-card__data">
-            <span>Total Monitorados</span>
+            <span>Total Espectadores</span>
             <h3>{totalTracked}</h3>
           </div>
         </div>
@@ -167,7 +166,7 @@ export function ReciprocityDashboard() {
             <UserCheck size={22} />
           </div>
           <div className="summary-card__data">
-            <span>Amigos Ativos</span>
+            <span>Ativos (Esta Semana)</span>
             <h3>{activeCount}</h3>
           </div>
         </div>
@@ -177,7 +176,7 @@ export function ReciprocityDashboard() {
             <TrendingDown size={22} />
           </div>
           <div className="summary-card__data">
-            <span>Caindo</span>
+            <span>Caindo (Esta Semana)</span>
             <h3>{droppingCount}</h3>
           </div>
         </div>
@@ -187,40 +186,61 @@ export function ReciprocityDashboard() {
             <Activity size={22} />
           </div>
           <div className="summary-card__data">
-            <span>Inativos</span>
-            <h3>{inactiveCount}</h3>
+            <span>Ocultados</span>
+            <h3>{blockedCount}</h3>
           </div>
         </div>
       </div>
 
       {/* Filtering and Information Bar */}
       <div className="reciprocity-filter-bar">
-        <div className="window-filters">
-          {(["24h", "7d", "30d", "all"] as const).map((win) => {
-            const label =
-              win === "24h"
-                ? "24 Horas"
-                : win === "7d"
-                  ? "7 Dias (Padrão)"
-                  : win === "30d"
-                    ? "30 Dias"
-                    : "Todo Período";
-            return (
-              <button
-                key={win}
-                type="button"
-                className={`filter-tab ${selectedWindow === win ? "filter-tab--active" : ""}`}
-                onClick={() => setSelectedWindow(win)}
+        <div className="window-filters" style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+          <button
+            type="button"
+            className={`filter-tab ${selectedMode === "week" ? "filter-tab--active" : ""}`}
+            onClick={() => setSelectedMode("week")}
+          >
+            Esta Semana (Rank da Semana)
+          </button>
+          <button
+            type="button"
+            className={`filter-tab ${selectedMode === "eternal" ? "filter-tab--active" : ""}`}
+            onClick={() => setSelectedMode("eternal")}
+          >
+            Ranking Eterno (Acumulado)
+          </button>
+
+          {closedWeeks.length > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", marginLeft: "10px" }}>
+              <Calendar size={14} style={{ color: "#8fa1a8" }} />
+              <select
+                value={selectedMode}
+                onChange={(e) => setSelectedMode(e.target.value)}
+                style={{
+                  height: "30px",
+                  background: "#151b1f",
+                  border: "1px solid #2a3338",
+                  borderRadius: "6px",
+                  color: "#edf4f6",
+                  fontSize: "12px",
+                  padding: "0 6px",
+                  outline: "none"
+                }}
               >
-                {label}
-              </button>
-            );
-          })}
+                <option value="week" disabled>Semanas Fechadas...</option>
+                {closedWeeks.map((cw) => (
+                  <option key={cw.weekMonday} value={cw.weekMonday}>
+                    Semana de {cw.weekMonday}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         <div className="info-badge">
           <Info size={14} />
-          <span>Classificação atualiza a cada {settings.pollingIntervalMinutes} min</span>
+          <span>Fórmula: {settings.minutesPerPoint} min = 1 ponto semanal</span>
         </div>
       </div>
 
@@ -228,18 +248,20 @@ export function ReciprocityDashboard() {
       {totalTracked === 0 ? (
         <div className="empty-state">
           <Sparkles size={40} style={{ color: "#75e39b" }} />
-          <strong>Nenhum canal monitorado</strong>
+          <strong>Nenhum espectador encontrado</strong>
           <span>
-            Adicione canais de amigos no menu "Gerenciar Amigos" para começar a analisar watch time.
+            {hasApiKey ? "Clique em Sincronizar para buscar a lista de espectadores mais recentes no MissXss." : "Configure sua chave API nas Configurações para carregar os dados de watch time."}
           </span>
-          <button
-            type="button"
-            className="btn btn--primary"
-            style={{ marginTop: "10px" }}
-            onClick={() => setActiveScreen("manage")}
-          >
-            Adicionar Primeiro Canal
-          </button>
+          {!hasApiKey && (
+            <button
+              type="button"
+              className="btn btn--primary"
+              style={{ marginTop: "10px" }}
+              onClick={() => setActiveScreen("settings")}
+            >
+              Configurar Chave API
+            </button>
+          )}
         </div>
       ) : (
         <div className="table-responsive">
@@ -247,88 +269,89 @@ export function ReciprocityDashboard() {
             <thead>
               <tr>
                 <th style={{ width: "60px" }}>Pos.</th>
-                <th>Nome / Amigo</th>
+                <th>Nome / Espectador</th>
                 <th style={{ width: "120px" }}>Plataforma</th>
                 <th style={{ width: "160px" }}>Username</th>
                 <th>Watch Time</th>
                 <th>Mensagens</th>
-                <th>Pontuação</th>
-                <th style={{ width: "70px" }}>Tend.</th>
+                <th>Pontos de Reciprocidade</th>
+                {selectedMode !== "week" && selectedMode !== "eternal" ? null : (
+                  <th style={{ width: "70px" }}>Tend.</th>
+                )}
                 <th style={{ width: "140px" }}>Status</th>
-                <th style={{ width: "120px" }}>Último Check</th>
-                <th style={{ width: "40px" }}></th>
+                <th style={{ width: "60px" }}>Ações</th>
               </tr>
             </thead>
             <tbody>
-              {rankings
-                .sort((a, b) => {
-                  if (a.status === "New" && b.status !== "New") return 1;
-                  if (b.status === "New" && a.status !== "New") return -1;
-                  return b.score - a.score;
-                })
-                .map((result, idx) => {
-                  const hasData = result.status !== "New";
-                  const rankDisplay = hasData ? `#${idx + 1}` : "-";
+              {rankings.map((result, idx) => {
+                // Trend rendering
+                let trendIcon = <Minus size={16} className="trend-icon trend-icon--stable" />;
+                if (result.trendDirection === "up") {
+                  trendIcon = <ArrowUp size={16} className="trend-icon trend-icon--up" />;
+                } else if (result.trendDirection === "down") {
+                  trendIcon = <ArrowDown size={16} className="trend-icon trend-icon--down" />;
+                }
 
-                  // Trend rendering
-                  let trendIcon = <Minus size={16} className="trend-icon trend-icon--stable" />;
-                  if (result.trendDirection === "up") {
-                    trendIcon = <ArrowUp size={16} className="trend-icon trend-icon--up" />;
-                  } else if (result.trendDirection === "down") {
-                    trendIcon = <ArrowDown size={16} className="trend-icon trend-icon--down" />;
-                  }
+                const displayPoints = result.points === 1 ? "1 ponto" : `${result.points} pontos`;
 
-                  return (
-                    <tr
-                      key={result.friendChannelId}
-                      className="reciprocity-row-clickable"
-                      onClick={() => handleOpenDetails(result.friendChannelId)}
-                      title="Clique para ver o gráfico e histórico de suporte"
-                    >
-                      <td>
-                        <strong className="rank-position">{rankDisplay}</strong>
-                      </td>
-                      <td>
-                        <div className="name-cell">
-                          <strong>{result.displayName}</strong>
-                          <ChevronRight size={14} className="hover-arrow" />
-                        </div>
-                      </td>
-                      <td>
-                        <span className="platform-pill" data-platform={result.platform}>
-                          {result.platform}
-                        </span>
-                      </td>
-                      <td>
-                        <code className="username-code">{result.username}</code>
-                      </td>
-                      <td>
-                        <strong>{result.watchTimeMinutes} min</strong>
-                      </td>
-                      <td>{result.messageCount}</td>
-                      <td>
-                        <span className="score-badge">{result.score} pts</span>
-                      </td>
-                      <td>{hasData ? trendIcon : "-"}</td>
-                      <td>
-                        <span className="status-pill" data-status={result.status}>
-                          {result.status === "New" ? "Sem Dados" : result.status}
-                        </span>
-                      </td>
-                      <td>
-                        <span className="date-cell">
-                          {new Date(result.lastChecked).toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </span>
-                      </td>
-                      <td>
-                        <ChevronRight size={16} className="table-arrow-indicator" />
-                      </td>
-                    </tr>
-                  );
-                })}
+                return (
+                  <tr
+                    key={`${result.platform}:${result.username}`}
+                    className="reciprocity-row-clickable"
+                    onClick={() => handleOpenDetails(result.username, result.platform)}
+                    title="Clique para ver o histórico e gráficos deste espectador"
+                  >
+                    <td>
+                      <strong className="rank-position">#{result.rank}</strong>
+                    </td>
+                    <td>
+                      <div className="name-cell">
+                        <strong>{result.displayName}</strong>
+                        <ChevronRight size={14} className="hover-arrow" />
+                      </div>
+                    </td>
+                    <td>
+                      <span className="platform-pill" data-platform={result.platform}>
+                        {result.platform}
+                      </span>
+                    </td>
+                    <td>
+                      <code className="username-code">{result.username}</code>
+                    </td>
+                    <td>
+                      <strong>{result.watchTimeMinutes} min</strong>
+                    </td>
+                    <td>{result.messageCount}</td>
+                    <td>
+                      <span className="score-badge" style={{ fontSize: "14px" }}>{displayPoints}</span>
+                    </td>
+                    {selectedMode !== "week" && selectedMode !== "eternal" ? null : (
+                      <td>{trendIcon}</td>
+                    )}
+                    <td>
+                      <span className="status-pill" data-status={result.status}>
+                        {result.status}
+                      </span>
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn btn--danger btn--small"
+                        onClick={(e) => {
+                          e.stopPropagation(); // Prevent opening detail panel
+                          if (confirm(`Deseja ocultar ${result.displayName} do ranking de reciprocidade?`)) {
+                            blockUser(result.platform, result.username);
+                          }
+                        }}
+                        style={{ padding: "0 8px", height: "28px" }}
+                        title="Ocultar do ranking"
+                      >
+                        Ocultar
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

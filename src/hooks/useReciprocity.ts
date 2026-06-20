@@ -1,24 +1,35 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { FriendChannel, WatchTimeSnapshot, ReciprocitySettings } from "../types/reciprocity";
+import type { ViewerStats, ClosedWeekRecord, ReciprocitySettings } from "../types/reciprocity";
 import {
-  loadFriendChannels,
-  saveFriendChannels,
-  loadSnapshots,
-  saveSnapshots,
+  loadBlockedUsers,
+  saveBlockedUsers,
+  loadClosedWeeks,
+  saveClosedWeeks,
+  loadCurrentWeekMonday,
+  saveCurrentWeekMonday,
+  loadCurrentWeekData,
+  saveCurrentWeekData,
   loadReciprocitySettings,
   saveReciprocitySettings,
-  pruneSnapshots,
+  loadPreviousRanks,
+  savePreviousRanks,
+  getCurrentWeekMonday,
+  getLocalDateString,
+  getWeekDateRange,
   calculateRankings,
 } from "../services/reciprocityStorage";
 
 export function useReciprocity() {
-  const [friends, setFriends] = useState<FriendChannel[]>([]);
-  const [snapshots, setSnapshots] = useState<WatchTimeSnapshot[]>([]);
+  const [blockedUsers, setBlockedUsers] = useState<string[]>([]);
+  const [closedWeeks, setClosedWeeks] = useState<ClosedWeekRecord[]>([]);
+  const [currentWeekMondayStr, setCurrentWeekMondayStr] = useState<string>("");
+  const [currentWeekData, setCurrentWeekData] = useState<ViewerStats[]>([]);
   const [settings, setSettings] = useState<ReciprocitySettings>(loadReciprocitySettings());
+  
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
-  const [selectedWindow, setSelectedWindow] = useState<"24h" | "7d" | "30d" | "all">("7d");
+  const [selectedMode, setSelectedMode] = useState<"week" | "eternal" | string>("week"); // "week", "eternal", or YYYY-MM-DD
   const [hasApiKey, setHasApiKey] = useState(false);
 
   // Check if API key is configured
@@ -34,79 +45,51 @@ export function useReciprocity() {
 
   // Load data on mount
   useEffect(() => {
-    setFriends(loadFriendChannels());
-    setSnapshots(loadSnapshots());
+    setBlockedUsers(loadBlockedUsers());
+    setClosedWeeks(loadClosedWeeks());
+    setCurrentWeekData(loadCurrentWeekData());
     
     const storedSettings = loadReciprocitySettings();
     setSettings(storedSettings);
-    setSelectedWindow(storedSettings.defaultWindow);
+
+    const realMonday = getCurrentWeekMonday();
+    const realMondayStr = getLocalDateString(realMonday);
     
+    const storedMonday = loadCurrentWeekMonday();
+    if (storedMonday) {
+      setCurrentWeekMondayStr(storedMonday);
+    } else {
+      setCurrentWeekMondayStr(realMondayStr);
+      saveCurrentWeekMonday(realMondayStr);
+    }
+
     void checkApiKeyStatus();
   }, [checkApiKeyStatus]);
 
-  // Update rankings calculated from state
-  const rankings = calculateRankings(friends, snapshots, selectedWindow, settings);
+  // Compute rankings
+  const previousRanks = loadPreviousRanks();
+  const rankings = calculateRankings(
+    currentWeekData,
+    closedWeeks,
+    blockedUsers,
+    selectedMode,
+    settings,
+    previousRanks
+  );
 
-  const addFriend = (
-    displayName: string,
-    platform: "Kick" | "Twitch" | "YouTube" | "TikTok",
-    username: string,
-    notes?: string
-  ) => {
-    const newFriend: FriendChannel = {
-      id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 9),
-      displayName: displayName.trim(),
-      platform,
-      username: username.trim(),
-      notes: notes?.trim(),
-      enabled: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    const updated = [...friends, newFriend];
-    setFriends(updated);
-    saveFriendChannels(updated);
-    return newFriend;
+  const blockUser = (platform: string, username: string) => {
+    const key = `${platform.toLowerCase()}:${username.toLowerCase()}`;
+    if (!blockedUsers.includes(key)) {
+      const updated = [...blockedUsers, key];
+      setBlockedUsers(updated);
+      saveBlockedUsers(updated);
+    }
   };
 
-  const updateFriend = (
-    id: string,
-    updates: Partial<Omit<FriendChannel, "id" | "createdAt" | "updatedAt">>
-  ) => {
-    const updated = friends.map((f) => {
-      if (f.id === id) {
-        return {
-          ...f,
-          ...updates,
-          updatedAt: new Date().toISOString(),
-        };
-      }
-      return f;
-    });
-    setFriends(updated);
-    saveFriendChannels(updated);
-  };
-
-  const removeFriend = (id: string) => {
-    const updated = friends.filter((f) => f.id !== id);
-    setFriends(updated);
-    saveFriendChannels(updated);
-
-    // Also clean up snapshots for this friend
-    const remainingSnaps = snapshots.filter((s) => s.friendChannelId !== id);
-    setSnapshots(remainingSnaps);
-    saveSnapshots(remainingSnaps);
-  };
-
-  const toggleFriendEnabled = (id: string) => {
-    const updated = friends.map((f) => {
-      if (f.id === id) {
-        return { ...f, enabled: !f.enabled, updatedAt: new Date().toISOString() };
-      }
-      return f;
-    });
-    setFriends(updated);
-    saveFriendChannels(updated);
+  const unblockUser = (key: string) => {
+    const updated = blockedUsers.filter((u) => u.toLowerCase() !== key.toLowerCase());
+    setBlockedUsers(updated);
+    saveBlockedUsers(updated);
   };
 
   const updateSettings = (newSettings: ReciprocitySettings) => {
@@ -134,115 +117,160 @@ export function useReciprocity() {
   };
 
   const syncWatchTime = useCallback(async () => {
-    // Rely on fresh state values
-    const currentFriends = loadFriendChannels();
-    const enabledFriends = currentFriends.filter((f) => f.enabled);
-    if (enabledFriends.length === 0) {
-      setSyncError("Nenhum canal amigo ativo cadastrado. Adicione canais ativados para sincronizar.");
-      return;
-    }
-
     setIsSyncing(true);
     setSyncError(null);
 
-    const newSnapshots: WatchTimeSnapshot[] = [];
-    const timestamp = new Date().toISOString();
-    let hasApiKeyError = false;
-    let errorMessage = "";
+    try {
+      const isKeySet = await invoke<boolean>("has_missxss_api_key");
+      if (!isKeySet) {
+        setSyncError("Chave API MissXss não configurada. Defina nas Configurações.");
+        setIsSyncing(false);
+        return;
+      }
 
-    // Sync each friend channel sequentially to respect rate limits safely
-    for (const friend of enabledFriends) {
-      try {
-        const response: any = await invoke("fetch_missxss_watch_time", {
-          platform: friend.platform,
-          username: friend.username,
-        });
+      const realMonday = getCurrentWeekMonday();
+      const realMondayStr = getLocalDateString(realMonday);
+      
+      let storedMondayStr = loadCurrentWeekMonday();
+      if (!storedMondayStr) {
+        storedMondayStr = realMondayStr;
+        saveCurrentWeekMonday(realMondayStr);
+        setCurrentWeekMondayStr(realMondayStr);
+      }
 
-        // Map responses (case insensitive support for api keys)
-        const watchTime = response.watch_time ?? response.watchTime ?? 0;
-        const messageCount = response.message_count ?? response.messageCount ?? 0;
+      // --- 1. Catchup Closed Weeks if Monday shifted ---
+      if (storedMondayStr !== realMondayStr) {
+        console.log(`[Reciprocity] Nova semana detectada. Fechando semana anterior: ${storedMondayStr}`);
+        
+        let loopMonday = new Date(storedMondayStr + "T00:00:00");
+        const closedWeeksList = loadClosedWeeks();
 
-        newSnapshots.push({
-          id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 9),
-          friendChannelId: friend.id,
-          platform: friend.platform,
-          username: friend.username,
-          watchTimeMinutes: Number(watchTime) || 0,
-          messageCount: Number(messageCount) || 0,
-          capturedAt: timestamp,
-        });
-      } catch (err: any) {
-        const errStr = String(err);
-        console.error(`[Reciprocity] Error syncing watch time for ${friend.displayName}:`, errStr);
+        // Process all weeks that have passed since the app last ran
+        while (getLocalDateString(loopMonday) !== realMondayStr) {
+          const weekMondayStr = getLocalDateString(loopMonday);
+          const range = getWeekDateRange(loopMonday);
+          
+          console.log(`[Reciprocity] Fechando dados para a semana: ${weekMondayStr} (${range.start} a ${range.end})`);
+          
+          try {
+            // Fetch final top list for that specific historical week
+            const response: any = await invoke("fetch_missxss_top_watch_time", {
+              limit: 100,
+              dateFrom: range.start,
+              dateTo: range.end,
+            });
 
-        // Check for specific API Key or authorization error
-        if (
-          errStr.includes("Key") ||
-          errStr.includes("MISSXSS_API_KEY") ||
-          errStr.includes("autorizada") ||
-          errStr.includes("Unauthorized") ||
-          errStr.includes("inválida")
-        ) {
-          hasApiKeyError = true;
-          errorMessage = errStr;
-          break;
+            const rawList = Array.isArray(response) ? response : [];
+            const viewerPoints: { [key: string]: any } = {};
+
+            for (const v of rawList) {
+              const watchTime = Number(v.watch_time ?? v.watchTime ?? 0);
+              const messageCount = Number(v.message_count ?? v.messageCount ?? 0);
+              const points = Math.floor(watchTime / settings.minutesPerPoint);
+              
+              if (points > 0) {
+                const username = v.username || "";
+                const platform = v.platform || "Kick";
+                const userKey = `${platform.toLowerCase()}:${username.toLowerCase()}`;
+                
+                viewerPoints[userKey] = {
+                  username,
+                  displayName: v.displayname || v.displayName || username,
+                  platform,
+                  points,
+                  watchTimeMinutes: watchTime,
+                  messageCount,
+                };
+              }
+            }
+
+            // Save closed week
+            if (Object.keys(viewerPoints).length > 0) {
+              closedWeeksList.push({
+                weekMonday: weekMondayStr,
+                viewerPoints,
+              });
+            }
+          } catch (err) {
+            console.error(`[Reciprocity] Falha ao fechar histórico para a semana ${weekMondayStr}:`, err);
+          }
+
+          // Advance loopMonday by 7 days
+          loopMonday.setDate(loopMonday.getDate() + 7);
         }
 
-        // If it's another error (e.g. user not found), write 0 watch time to keep delta-intervals moving
-        newSnapshots.push({
-          id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 9),
-          friendChannelId: friend.id,
-          platform: friend.platform,
-          username: friend.username,
-          watchTimeMinutes: 0,
-          messageCount: 0,
-          capturedAt: timestamp,
-        });
+        saveClosedWeeks(closedWeeksList);
+        setClosedWeeks(closedWeeksList);
+
+        // Update Monday baseline
+        saveCurrentWeekMonday(realMondayStr);
+        setCurrentWeekMondayStr(realMondayStr);
       }
-    }
 
-    if (hasApiKeyError) {
-      setSyncError(errorMessage || "A chave MISSXSS_API_KEY não foi encontrada ou é inválida no ambiente Rust.");
+      // --- 2. Fetch Current Week Leaderboard ---
+      const todayStr = getLocalDateString(new Date());
+      const range = getWeekDateRange(realMonday);
+
+      console.log(`[Reciprocity] Sincronizando semana atual: ${realMondayStr} (${range.start} a ${todayStr})`);
+
+      const response: any = await invoke("fetch_missxss_top_watch_time", {
+        limit: 100,
+        dateFrom: range.start,
+        dateTo: todayStr, // Fetch up to today
+      });
+
+      const rawList = Array.isArray(response) ? response : [];
+      const currentData: ViewerStats[] = rawList.map((v: any) => ({
+        username: v.username || "",
+        displayName: v.displayname || v.displayName || v.username || "",
+        platform: v.platform || "Kick",
+        watchTimeMinutes: Number(v.watch_time ?? v.watchTime ?? 0),
+        messageCount: Number(v.message_count ?? v.messageCount ?? 0),
+      }));
+
+      // Cache ranks before saving new stats to determine trends on the next tick
+      const currentRanks: { [key: string]: number } = {};
+      rankings.forEach((r) => {
+        const key = `${r.platform.toLowerCase()}:${r.username.toLowerCase()}`;
+        currentRanks[key] = r.rank;
+      });
+      savePreviousRanks(currentRanks);
+
+      setCurrentWeekData(currentData);
+      saveCurrentWeekData(currentData);
+      setSyncError(null);
+    } catch (err: any) {
+      console.error("[Reciprocity] Erro durante o sincronismo:", err);
+      setSyncError(String(err) || "Falha na sincronização com MissXss API.");
+    } finally {
       setIsSyncing(false);
-      return;
+      void checkApiKeyStatus();
     }
-
-    // Append, prune, and save
-    const currentSnapshots = loadSnapshots();
-    const allSnapshots = [...currentSnapshots, ...newSnapshots];
-    const pruned = pruneSnapshots(allSnapshots);
-    setSnapshots(pruned);
-    saveSnapshots(pruned);
-    setIsSyncing(false);
-    void checkApiKeyStatus();
-  }, [checkApiKeyStatus]);
+  }, [rankings, settings.minutesPerPoint, checkApiKeyStatus]);
 
   // Setup auto polling interval
   useEffect(() => {
-    const storedFriends = loadFriendChannels();
-    if (storedFriends.length === 0) return;
-
     const intervalMs = settings.pollingIntervalMinutes * 60 * 1000;
     const timer = setInterval(() => {
       void syncWatchTime();
     }, intervalMs);
 
     return () => clearInterval(timer);
-  }, [friends.length, settings.pollingIntervalMinutes, syncWatchTime]);
+  }, [settings.pollingIntervalMinutes, syncWatchTime]);
 
   return {
-    friends,
-    snapshots,
+    blockedUsers,
+    closedWeeks,
+    currentWeekMondayStr,
+    currentWeekData,
     settings,
     rankings,
     isSyncing,
     syncError,
-    selectedWindow,
-    setSelectedWindow,
-    addFriend,
-    updateFriend,
-    removeFriend,
-    toggleFriendEnabled,
+    selectedMode,
+    setSelectedMode,
+    blockUser,
+    unblockUser,
     updateSettings,
     syncWatchTime,
     hasApiKey,

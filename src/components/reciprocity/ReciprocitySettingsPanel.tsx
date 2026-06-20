@@ -1,6 +1,6 @@
 import type React from "react";
 import { useState } from "react";
-import type { ReciprocitySettings, MessageDampingType } from "../../types/reciprocity";
+import type { ReciprocitySettings } from "../../types/reciprocity";
 import { Save, RotateCcw, Key, Eye, EyeOff, Trash2, CheckCircle2 } from "lucide-react";
 import { defaultReciprocitySettings } from "../../services/reciprocityStorage";
 
@@ -22,11 +22,7 @@ export function ReciprocitySettingsPanel({
   onDeleteApiKey,
 }: ReciprocitySettingsPanelProps) {
   const [pollingInterval, setPollingInterval] = useState(settings.pollingIntervalMinutes);
-  const [defaultWindow, setDefaultWindow] = useState(settings.defaultWindow);
-  const [bonusWeight, setBonusWeight] = useState(settings.messageBonusWeight);
-  const [dampingType, setDampingType] = useState<MessageDampingType>(settings.messageDampingType);
-  const [activeThreshold, setActiveThreshold] = useState(settings.activeThresholdMinutes);
-  const [droppingThreshold, setDroppingThreshold] = useState(settings.droppingThresholdMinutes);
+  const [minutesPerPoint, setMinutesPerPoint] = useState(settings.minutesPerPoint);
 
   // API Key States
   const [apiKeyInput, setApiKeyInput] = useState("");
@@ -39,22 +35,14 @@ export function ReciprocitySettingsPanel({
     e.preventDefault();
     onSave({
       pollingIntervalMinutes: Math.max(5, pollingInterval), // Minimum 5 mins
-      defaultWindow,
-      messageBonusWeight: Math.max(0, bonusWeight),
-      messageDampingType: dampingType,
-      activeThresholdMinutes: Math.max(1, activeThreshold),
-      droppingThresholdMinutes: Math.max(0, droppingThreshold),
+      minutesPerPoint: Math.max(1, minutesPerPoint), // Minimum 1 minute
     });
     onClose();
   };
 
   const handleReset = () => {
     setPollingInterval(defaultReciprocitySettings.pollingIntervalMinutes);
-    setDefaultWindow(defaultReciprocitySettings.defaultWindow);
-    setBonusWeight(defaultReciprocitySettings.messageBonusWeight);
-    setDampingType(defaultReciprocitySettings.messageDampingType);
-    setActiveThreshold(defaultReciprocitySettings.activeThresholdMinutes);
-    setDroppingThreshold(defaultReciprocitySettings.droppingThresholdMinutes);
+    setMinutesPerPoint(defaultReciprocitySettings.minutesPerPoint);
   };
 
   const handleSaveApiKey = async (e: React.MouseEvent) => {
@@ -94,7 +82,7 @@ export function ReciprocitySettingsPanel({
     <div className="reciprocity-settings-card">
       <div className="reciprocity-settings-card__header">
         <h3>Configurações de Reciprocidade</h3>
-        <p>Ajuste as chaves de acesso, os critérios de pontuação e os prazos de inatividade.</p>
+        <p>Ajuste as chaves de acesso, os critérios de pontuação e o tempo de atualização.</p>
       </div>
 
       {/* API Key Management Section */}
@@ -211,69 +199,15 @@ export function ReciprocitySettingsPanel({
           </div>
 
           <div className="form-group">
-            <label htmlFor="defaultWindow">Filtro de Período Padrão</label>
-            <select
-              id="defaultWindow"
-              value={defaultWindow}
-              onChange={(e) => setDefaultWindow(e.target.value as any)}
-            >
-              <option value="24h">Últimas 24 Horas</option>
-              <option value="7d">Últimos 7 Dias</option>
-              <option value="30d">Últimos 30 Dias</option>
-              <option value="all">Todo o Período</option>
-            </select>
-            <span className="help-text">Período inicial carregado no painel.</span>
-          </div>
-
-          <div className="form-group">
-            <label htmlFor="bonusWeight">Peso do Bônus de Chat (Multiplicador)</label>
+            <label htmlFor="minutesPerPoint">Minutos para 1 Ponto de Reciprocidade</label>
             <input
-              id="bonusWeight"
-              type="number"
-              step="0.5"
-              min="0"
-              value={bonusWeight}
-              onChange={(e) => setBonusWeight(parseFloat(e.target.value) || 0)}
-            />
-            <span className="help-text">Multiplicador aplicado às mensagens amortecidas.</span>
-          </div>
-
-          <div className="form-group">
-            <label htmlFor="dampingType">Fórmula de Amortecimento de Chat</label>
-            <select
-              id="dampingType"
-              value={dampingType}
-              onChange={(e) => setDampingType(e.target.value as MessageDampingType)}
-            >
-              <option value="none">Linear (Sem amortecimento - vulnerável a spam)</option>
-              <option value="sqrt">Raiz Quadrada (Recomendado - protege contra spam)</option>
-              <option value="capped">Limitado (Capped em 100 mensagens)</option>
-            </select>
-            <span className="help-text">Define como a contagem de chat é processada para a pontuação.</span>
-          </div>
-
-          <div className="form-group">
-            <label htmlFor="activeThreshold">Limite de Minutos Assistidos "Ativo" (7 dias)</label>
-            <input
-              id="activeThreshold"
+              id="minutesPerPoint"
               type="number"
               min="1"
-              value={activeThreshold}
-              onChange={(e) => setActiveThreshold(parseInt(e.target.value) || 60)}
+              value={minutesPerPoint}
+              onChange={(e) => setMinutesPerPoint(parseInt(e.target.value) || 60)}
             />
-            <span className="help-text">Minutos necessários nos últimos 7 dias para o status Ativo.</span>
-          </div>
-
-          <div className="form-group">
-            <label htmlFor="droppingThreshold">Limite de Minutos Assistidos "Caindo" (7 dias)</label>
-            <input
-              id="droppingThreshold"
-              type="number"
-              min="0"
-              value={droppingThreshold}
-              onChange={(e) => setDroppingThreshold(parseInt(e.target.value) || 15)}
-            />
-            <span className="help-text">Abaixo disso o canal é considerado Inativo.</span>
+            <span className="help-text">Por exemplo, 60 minutos (1 hora) assistidos geram 1 ponto na semana.</span>
           </div>
         </div>
 
