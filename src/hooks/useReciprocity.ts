@@ -20,6 +20,27 @@ import {
   calculateRankings,
 } from "../services/reciprocityStorage";
 
+function extractArray(response: any): any[] {
+  if (Array.isArray(response)) {
+    return response;
+  }
+  if (response && typeof response === "object") {
+    if (Array.isArray(response.data)) {
+      return response.data;
+    }
+    if (Array.isArray(response.list)) {
+      return response.list;
+    }
+    if (Array.isArray(response.users)) {
+      return response.users;
+    }
+    if (Array.isArray(response.results)) {
+      return response.results;
+    }
+  }
+  return [];
+}
+
 export function useReciprocity() {
   const [blockedUsers, setBlockedUsers] = useState<string[]>([]);
   const [closedWeeks, setClosedWeeks] = useState<ClosedWeekRecord[]>([]);
@@ -160,7 +181,7 @@ export function useReciprocity() {
               dateTo: range.end,
             });
 
-            const rawList = Array.isArray(response) ? response : [];
+            const rawList = extractArray(response);
             const viewerPoints: { [key: string]: any } = {};
 
             for (const v of rawList) {
@@ -219,7 +240,7 @@ export function useReciprocity() {
         dateTo: todayStr, // Fetch up to today
       });
 
-      const rawList = Array.isArray(response) ? response : [];
+      const rawList = extractArray(response);
       const currentData: ViewerStats[] = rawList.map((v: any) => ({
         username: v.username || "",
         displayName: v.displayname || v.displayName || v.username || "",
