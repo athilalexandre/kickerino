@@ -177,6 +177,7 @@ export function useReciprocity() {
             // Fetch final top list for that specific historical week
             const response: any = await invoke("fetch_missxss_top_watch_time", {
               limit: 100,
+              platform: "Kick",
               dateFrom: range.start,
               dateTo: range.end,
             });
@@ -236,6 +237,7 @@ export function useReciprocity() {
 
       const response: any = await invoke("fetch_missxss_top_watch_time", {
         limit: 100,
+        platform: "Kick",
         dateFrom: range.start,
         dateTo: todayStr, // Fetch up to today
       });
