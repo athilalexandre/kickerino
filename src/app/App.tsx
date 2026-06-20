@@ -18,6 +18,7 @@ import {
   openReleaseDownload,
   type LatestRelease,
 } from "../services/updates";
+import { ReciprocityDashboard } from "../components/reciprocity/ReciprocityDashboard";
 
 type UpdateState = {
   status: "idle" | "checking" | "current" | "available" | "error";
@@ -26,6 +27,7 @@ type UpdateState = {
 };
 
 export function App() {
+  const [currentTab, setCurrentTab] = useState<"monitor" | "reciprocity">("monitor");
   const [selectedSlug, setSelectedSlug] = useState("all");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -93,7 +95,7 @@ export function App() {
     return false;
   }
 
-  function toggleChannelSupport(slug: string) {
+  const toggleChannelSupport = (slug: string) => {
     setChannels((current) =>
       current.map((channel) =>
         channel.slug === slug
@@ -101,9 +103,9 @@ export function App() {
           : channel
       )
     );
-  }
+  };
 
-  function updateChannelSupportConfig(slug: string, nextConfig: Partial<ChannelSupportConfig>) {
+  const updateChannelSupportConfig = (slug: string, nextConfig: Partial<ChannelSupportConfig>) => {
     setChannels((current) =>
       current.map((channel) =>
         channel.slug === slug
@@ -116,7 +118,7 @@ export function App() {
           : channel
       )
     );
-  }
+  };
 
   const handleSettingsChange = (nextSettings: AppSettings) => {
     if (nextSettings.supportBotEnabled !== settings.supportBotEnabled) {
@@ -182,6 +184,24 @@ export function App() {
               )}
             </p>
           </div>
+        </div>
+
+        {/* Custom page tabs */}
+        <div className="main-tabs">
+          <button
+            className={`main-tab ${currentTab === "monitor" ? "main-tab--active" : ""}`}
+            type="button"
+            onClick={() => setCurrentTab("monitor")}
+          >
+            Apoio de Canais
+          </button>
+          <button
+            className={`main-tab ${currentTab === "reciprocity" ? "main-tab--active" : ""}`}
+            type="button"
+            onClick={() => setCurrentTab("reciprocity")}
+          >
+            Reciprocidade
+          </button>
         </div>
 
         <div className="topbar-actions">
@@ -262,69 +282,77 @@ export function App() {
         </div>
       </header>
 
-      <div className="workspace">
-        <ChannelList
-          channels={sortedChannels}
-          selectedSlug={selectedSlug}
-          isChecking={isChecking}
-          onAdd={handleAddChannel}
-          onRefresh={() => void refreshAll()}
-          onSelect={setSelectedSlug}
-          activeSupportSlugs={activeSupportSlugs}
-          supportTimers={supportTimers}
-        />
+      <div className="workspace" style={{ gridTemplateColumns: currentTab === "reciprocity" ? "1fr" : undefined }}>
+        {currentTab === "monitor" ? (
+          <>
+            <ChannelList
+              channels={sortedChannels}
+              selectedSlug={selectedSlug}
+              isChecking={isChecking}
+              onAdd={handleAddChannel}
+              onRefresh={() => void refreshAll()}
+              onSelect={setSelectedSlug}
+              activeSupportSlugs={activeSupportSlugs}
+              supportTimers={supportTimers}
+            />
 
-        <section className="content">
-          <ChannelTabs
-            channels={sortedChannels}
-            selectedSlug={selectedSlug}
-            onSelect={setSelectedSlug}
-          />
+            <section className="content">
+              <ChannelTabs
+                channels={sortedChannels}
+                selectedSlug={selectedSlug}
+                onSelect={setSelectedSlug}
+              />
 
-          {settingsOpen && (
-            <SettingsPanel settings={settings} onChange={handleSettingsChange} />
-          )}
+              {settingsOpen && (
+                <SettingsPanel settings={settings} onChange={handleSettingsChange} />
+              )}
 
-          {updateState.status !== "idle" && updateState.message && (
-            <section className={`update-banner update-banner--${updateState.status}`}>
-              <span>{updateState.message}</span>
-              {updateState.status === "available" && updateState.release && (
-                <button
-                  type="button"
-                  onClick={() => void openReleaseDownload(updateState.release!)}
-                >
-                  <Download size={17} />
-                  <span>Baixar</span>
-                </button>
+              {updateState.status !== "idle" && updateState.message && (
+                <section className={`update-banner update-banner--${updateState.status}`}>
+                  <span>{updateState.message}</span>
+                  {updateState.status === "available" && updateState.release && (
+                    <button
+                      type="button"
+                      onClick={() => void openReleaseDownload(updateState.release!)}
+                    >
+                      <Download size={17} />
+                      <span>Baixar</span>
+                    </button>
+                  )}
+                </section>
+              )}
+
+              {visibleChannels.length > 0 ? (
+                <div className="cards-grid">
+                  {visibleChannels.map((channel) => (
+                    <ChannelCard
+                      channel={channel}
+                      key={channel.slug}
+                      onRemove={removeAndRetainSelection}
+                      onSelect={setSelectedSlug}
+                      openLiveOnDoubleClick={settings.openLiveOnDoubleClick}
+                      isSupported={channel.supportEnabled !== false}
+                      supportTimer={supportTimers[channel.slug]}
+                      onSendNow={triggerManualMessage}
+                      onToggleSupport={toggleChannelSupport}
+                      onUpdateSupportConfig={updateChannelSupportConfig}
+                      globalIntervalMinutes={settings.supportIntervalMinutes}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-state">
+                  <strong>Nenhum canal monitorado</strong>
+                  <span>Adicione um slug da Kick na lista lateral para comecar.</span>
+                </div>
               )}
             </section>
-          )}
-
-          {visibleChannels.length > 0 ? (
-            <div className="cards-grid">
-              {visibleChannels.map((channel) => (
-                <ChannelCard
-                  channel={channel}
-                  key={channel.slug}
-                  onRemove={removeAndRetainSelection}
-                  onSelect={setSelectedSlug}
-                  openLiveOnDoubleClick={settings.openLiveOnDoubleClick}
-                  isSupported={channel.supportEnabled !== false}
-                  supportTimer={supportTimers[channel.slug]}
-                  onSendNow={triggerManualMessage}
-                  onToggleSupport={toggleChannelSupport}
-                  onUpdateSupportConfig={updateChannelSupportConfig}
-                  globalIntervalMinutes={settings.supportIntervalMinutes}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="empty-state">
-              <strong>Nenhum canal monitorado</strong>
-              <span>Adicione um slug da Kick na lista lateral para comecar.</span>
-            </div>
-          )}
-        </section>
+          </>
+        ) : (
+          <section className="content" style={{ padding: "18px 24px" }}>
+            <ReciprocityDashboard />
+          </section>
+        )}
       </div>
 
       <div className="toast-stack" aria-live="polite">

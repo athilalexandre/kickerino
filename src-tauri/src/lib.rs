@@ -512,6 +512,140 @@ async fn fetch_channels_emotes(slugs: Vec<String>) -> Result<std::collections::H
     Ok(map)
 }
 
+use std::fs;
+use std::path::PathBuf;
+
+fn get_key_filepath(app: &AppHandle) -> Result<PathBuf, String> {
+    let mut path = app.path().app_data_dir()
+        .map_err(|e| format!("Falha ao obter diretório de dados do app: {}", e))?;
+    
+    if !path.exists() {
+        fs::create_dir_all(&path)
+            .map_err(|e| format!("Falha ao criar diretório de dados: {}", e))?;
+    }
+    
+    path.push("missxss_key.txt");
+    Ok(path)
+}
+
+fn get_effective_api_key(app: &AppHandle) -> Result<String, String> {
+    // 1. Check environment variable first
+    if let Ok(key) = std::env::var("MISSXSS_API_KEY") {
+        let trimmed = key.trim();
+        if !trimmed.is_empty() {
+            return Ok(trimmed.to_string());
+        }
+    }
+    
+    // 2. Check stored key file
+    if let Ok(path) = get_key_filepath(app) {
+        if path.exists() {
+            if let Ok(key) = fs::read_to_string(path) {
+                let trimmed = key.trim();
+                if !trimmed.is_empty() {
+                    return Ok(trimmed.to_string());
+                }
+            }
+        }
+    }
+    
+    Err("API Key da MissXss não encontrada. Por favor, configure-a no painel de configurações.".to_string())
+}
+
+#[tauri::command]
+fn has_missxss_api_key(app: AppHandle) -> bool {
+    get_effective_api_key(&app).is_ok()
+}
+
+#[tauri::command]
+fn save_missxss_api_key(app: AppHandle, api_key: String) -> Result<(), String> {
+    let path = get_key_filepath(&app)?;
+    let trimmed = api_key.trim();
+    if trimmed.is_empty() {
+        return Err("A chave API não pode ser vazia.".to_string());
+    }
+    fs::write(path, trimmed)
+        .map_err(|e| format!("Falha ao salvar a chave no disco: {}", e))?;
+    Ok(())
+}
+
+#[tauri::command]
+fn delete_missxss_api_key(app: AppHandle) -> Result<(), String> {
+    let path = get_key_filepath(&app)?;
+    if path.exists() {
+        fs::remove_file(path)
+            .map_err(|e| format!("Falha ao deletar a chave no disco: {}", e))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn fetch_missxss_watch_time(app: AppHandle, platform: String, username: String) -> Result<serde_json::Value, String> {
+    let api_key = get_effective_api_key(&app)?;
+
+    let client = reqwest::Client::new();
+    let mut body = serde_json::Map::new();
+    body.insert("platform".to_string(), serde_json::Value::String(platform));
+    body.insert("username".to_string(), serde_json::Value::String(username));
+
+    let response = client
+        .post("https://api.missxss.com.tr/v1/get-watch-time")
+        .header(reqwest::header::AUTHORIZATION, format!("Bearer {api_key}"))
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|err| format!("Erro de rede ao conectar com MissXss API: {}", err))?;
+
+    let status = response.status();
+    if status == reqwest::StatusCode::UNAUTHORIZED {
+        return Err("API Key da MissXss inválida ou não autorizada.".to_string());
+    }
+
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|err| format!("Resposta inválida da MissXss API: {}", err))?;
+
+    Ok(json)
+}
+
+#[tauri::command]
+async fn fetch_missxss_top_watch_time(app: AppHandle, limit: Option<u32>, platform: Option<String>) -> Result<serde_json::Value, String> {
+    let api_key = get_effective_api_key(&app)?;
+
+    let client = reqwest::Client::new();
+    let mut body = serde_json::Map::new();
+    
+    if let Some(l) = limit {
+        body.insert("limit".to_string(), serde_json::Value::Number(l.into()));
+    }
+    if let Some(p) = platform {
+        body.insert("platform".to_string(), serde_json::Value::String(p));
+    }
+
+    let response = client
+        .post("https://api.missxss.com.tr/v1/get-watch-time-top")
+        .header(reqwest::header::AUTHORIZATION, format!("Bearer {api_key}"))
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|err| format!("Erro de rede ao conectar com MissXss API: {}", err))?;
+
+    let status = response.status();
+    if status == reqwest::StatusCode::UNAUTHORIZED {
+        return Err("API Key da MissXss inválida ou não autorizada.".to_string());
+    }
+
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|err| format!("Resposta inválida da MissXss API: {}", err))?;
+
+    Ok(json)
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -526,7 +660,12 @@ pub fn run() {
             open_login_window,
             send_support_message,
             log_message,
-            fetch_channels_emotes
+            fetch_channels_emotes,
+            fetch_missxss_watch_time,
+            fetch_missxss_top_watch_time,
+            has_missxss_api_key,
+            save_missxss_api_key,
+            delete_missxss_api_key
         ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o Kickerino");
