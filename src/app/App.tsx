@@ -19,6 +19,8 @@ import {
   type LatestRelease,
 } from "../services/updates";
 import { ReciprocityDashboard } from "../components/reciprocity/ReciprocityDashboard";
+import { useSoundTimers } from "../hooks/useSoundTimers";
+import { SoundTimersDashboard } from "../components/SoundTimersDashboard";
 
 type UpdateState = {
   status: "idle" | "checking" | "current" | "available" | "error";
@@ -27,13 +29,14 @@ type UpdateState = {
 };
 
 export function App() {
-  const [currentTab, setCurrentTab] = useState<"monitor" | "reciprocity">("monitor");
+  const [currentTab, setCurrentTab] = useState<"monitor" | "reciprocity" | "timers">("monitor");
   const [selectedSlug, setSelectedSlug] = useState("all");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [updateState, setUpdateState] = useState<UpdateState>({ status: "idle" });
   const [kickLoginStatus, setKickLoginStatus] = useState<"checking" | "connected" | "disconnected">("checking");
   const { settings, setSettings } = useSettings();
+  const { timers, addTimer, deleteTimer, updateTimer } = useSoundTimers();
   const { channels, sortedChannels, setChannels, addChannel, removeChannel } =
     useChannels();
   const { isChecking, liveCount, refreshAll, toasts } = useLiveMonitor({
@@ -202,6 +205,13 @@ export function App() {
           >
             Reciprocidade
           </button>
+          <button
+            className={`main-tab ${currentTab === "timers" ? "main-tab--active" : ""}`}
+            type="button"
+            onClick={() => setCurrentTab("timers")}
+          >
+            Timers Sonoros
+          </button>
         </div>
 
         <div className="topbar-actions">
@@ -282,7 +292,7 @@ export function App() {
         </div>
       </header>
 
-      <div className="workspace" style={{ gridTemplateColumns: currentTab === "reciprocity" ? "1fr" : undefined }}>
+      <div className="workspace" style={{ gridTemplateColumns: currentTab !== "monitor" ? "1fr" : undefined }}>
         {currentTab === "monitor" ? (
           <>
             <ChannelList
@@ -348,9 +358,18 @@ export function App() {
               )}
             </section>
           </>
-        ) : (
+        ) : currentTab === "reciprocity" ? (
           <section className="content" style={{ padding: "18px 24px" }}>
             <ReciprocityDashboard />
+          </section>
+        ) : (
+          <section className="content" style={{ padding: "18px 24px" }}>
+            <SoundTimersDashboard
+              timers={timers}
+              addTimer={addTimer}
+              deleteTimer={deleteTimer}
+              updateTimer={updateTimer}
+            />
           </section>
         )}
       </div>
