@@ -7,6 +7,7 @@ import { ChannelList } from "../components/ChannelList";
 import { ChannelTabs } from "../components/ChannelTabs";
 import { SettingsPanel } from "../components/SettingsPanel";
 import { HelpModal } from "../components/HelpModal";
+import { KickAccountModal } from "../components/KickAccountModal";
 import { useChannels } from "../hooks/useChannels";
 import { useLiveMonitor } from "../hooks/useLiveMonitor";
 import { useSettings } from "../hooks/useSettings";
@@ -33,8 +34,10 @@ export function App() {
   const [selectedSlug, setSelectedSlug] = useState("all");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [accountModalOpen, setAccountModalOpen] = useState(false);
   const [updateState, setUpdateState] = useState<UpdateState>({ status: "idle" });
   const [kickLoginStatus, setKickLoginStatus] = useState<"checking" | "connected" | "disconnected">("checking");
+  const [kickUsername, setKickUsername] = useState<string | null>(null);
   const { settings, setSettings } = useSettings();
   const { timers, addTimer, deleteTimer, updateTimer } = useSoundTimers();
   const { channels, sortedChannels, setChannels, addChannel, removeChannel } =
@@ -56,10 +59,18 @@ export function App() {
     void invoke("open_login_window");
 
     const unlistenPromise = listen<string>("kick-login-event", (event) => {
-      if (event.payload === "connected") {
+      const payload = event.payload;
+      if (payload.startsWith("connected")) {
         setKickLoginStatus("connected");
+        const parts = payload.split(":");
+        if (parts.length > 1) {
+          setKickUsername(parts[1]);
+        } else {
+          setKickUsername(null);
+        }
       } else {
         setKickLoginStatus("disconnected");
+        setKickUsername(null);
       }
     });
 
@@ -221,15 +232,19 @@ export function App() {
             type="button"
             title={
               kickLoginStatus === "connected"
-                ? "Conta Kick Conectada"
+                ? "Gerenciar Conta Kick"
                 : kickLoginStatus === "checking"
                   ? "Verificando Login da Kick..."
                   : "Conectar Conta Kick"
             }
             aria-label="Status Login Kick"
             onClick={() => {
-              setKickLoginStatus("checking");
-              void invoke("open_login_window");
+              if (kickLoginStatus === "connected") {
+                setAccountModalOpen(true);
+              } else {
+                setKickLoginStatus("checking");
+                void invoke("open_login_window");
+              }
             }}
             disabled={kickLoginStatus === "checking"}
           >
@@ -383,6 +398,12 @@ export function App() {
       </div>
 
       <HelpModal isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
+      <KickAccountModal
+        isOpen={accountModalOpen}
+        onClose={() => setAccountModalOpen(false)}
+        username={kickUsername}
+        setKickLoginStatus={setKickLoginStatus}
+      />
     </main>
   );
 }

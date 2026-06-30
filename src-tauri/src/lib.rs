@@ -297,7 +297,7 @@ async fn open_login_window(app: AppHandle) -> Result<(), String> {
     let url_str = "https://kick.com/";
     let parsed_url = url_str.parse::<tauri::Url>().map_err(|e| e.to_string())?;
 
-    // Injected JS script to detect login status and update URL hash
+    // Injected JS script to detect login status, extract username, and update URL hash
     let js_script = r##"
         (function() {
             console.log('[Kickerino] Monitor de login iniciado.');
@@ -331,8 +331,42 @@ async fn open_login_window(app: AppHandle) -> Result<(), String> {
                     connectedCount++;
                     // Require 4 consecutive cycles (2 seconds) to confirm connected
                     // This prevents false positives during page hydration
-                    if (connectedCount >= 4 && window.location.hash !== "#connected") {
-                        window.location.hash = "connected";
+                    if (connectedCount >= 4) {
+                        let username = "";
+                        try {
+                            const img = document.querySelector('nav img[src*="profile_image"]') || 
+                                        document.querySelector('header img[src*="profile_image"]') ||
+                                        document.querySelector('nav img[src*="profile_pictures"]') ||
+                                        document.querySelector('header img[src*="profile_pictures"]');
+                            if (img) {
+                                const alt = img.getAttribute('alt') || '';
+                                if (alt && !alt.toLowerCase().includes('logo') && !alt.toLowerCase().includes('kick')) {
+                                    username = alt.replace(/avatar\s+de\s+/i, '').replace(/'s\s+avatar/i, '').trim();
+                                }
+                            }
+                            if (!username) {
+                                for (let i = 0; i < localStorage.length; i++) {
+                                    const key = localStorage.key(i);
+                                    if (key.includes('user') || key.includes('auth')) {
+                                        const val = localStorage.getItem(key);
+                                        if (val) {
+                                            try {
+                                                const obj = JSON.parse(val);
+                                                if (obj && typeof obj === 'object') {
+                                                    username = obj.username || obj.slug || (obj.user && (obj.user.username || obj.user.slug)) || "";
+                                                    if (username) break;
+                                                }
+                                            } catch(e){}
+                                        }
+                                    }
+                                }
+                            }
+                        } catch(e){}
+
+                        const targetHash = username ? "connected:" + username : "connected";
+                        if (window.location.hash !== "#" + targetHash) {
+                            window.location.hash = targetHash;
+                        }
                     }
                 } else {
                     connectedCount = 0;
@@ -381,6 +415,7 @@ async fn open_login_window(app: AppHandle) -> Result<(), String> {
     let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
         let mut connected = false;
+        let mut payload = "connected".to_string();
 
         // Wait up to 20 seconds (40 iterations)
         for _ in 0..40 {
@@ -393,8 +428,9 @@ async fn open_login_window(app: AppHandle) -> Result<(), String> {
 
             if let Ok(url) = window_clone.url() {
                 let fragment = url.fragment().unwrap_or("");
-                if fragment == "connected" {
+                if fragment.starts_with("connected") {
                     connected = true;
+                    payload = fragment.to_string();
                     break;
                 } else if fragment == "disconnected" {
                     break;
@@ -403,7 +439,7 @@ async fn open_login_window(app: AppHandle) -> Result<(), String> {
         }
 
         if connected {
-            let _ = app_handle.emit("kick-login-event", "connected");
+            let _ = app_handle.emit("kick-login-event", payload);
             let _ = window_clone.close();
         } else {
             // Either timed out or explicitly disconnected. Show the login window
@@ -422,8 +458,9 @@ async fn open_login_window(app: AppHandle) -> Result<(), String> {
                     }
                     if let Ok(url) = window_clone2.url() {
                         let fragment = url.fragment().unwrap_or("");
-                        if fragment == "connected" {
-                            let _ = app_handle2.emit("kick-login-event", "connected");
+                        if fragment.starts_with("connected") {
+                            let p = fragment.to_string();
+                            let _ = app_handle2.emit("kick-login-event", p);
                             let _ = window_clone2.close();
                             break;
                         }
@@ -431,6 +468,91 @@ async fn open_login_window(app: AppHandle) -> Result<(), String> {
                 }
             });
         }
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn logout_kick(app: AppHandle) -> Result<(), String> {
+    let label = "kick-login";
+
+    // Close existing if open
+    if let Some(w) = app.get_webview_window(label) {
+        let _ = w.close();
+    }
+
+    let url_str = "https://kick.com/";
+    let parsed_url = url_str.parse::<tauri::Url>().map_err(|e| e.to_string())?;
+
+    // Script to logout
+    let js_script = r##"
+        (function() {
+            console.log('[Kickerino] Iniciando fluxo de logout.');
+            function doLogout() {
+                try {
+                    localStorage.clear();
+                    sessionStorage.clear();
+                } catch(e){}
+                const profileBtn = document.querySelector('[id^="headlessui-menu-button"]') || document.querySelector('.user-menu');
+                if (profileBtn) {
+                    profileBtn.click();
+                    setTimeout(() => {
+                        const logoutBtn = Array.from(document.querySelectorAll('button, a')).find(el => {
+                            const txt = (el.innerText || el.textContent || '').toLowerCase();
+                            return txt.includes('logout') || txt.includes('log out') || txt.includes('sair') || txt.includes('desconectar');
+                        });
+                        if (logoutBtn) {
+                            logoutBtn.click();
+                        } else {
+                            window.location.hash = "disconnected";
+                        }
+                    }, 500);
+                } else {
+                    window.location.hash = "disconnected";
+                }
+            }
+            if (document.readyState === 'complete') {
+                doLogout();
+            } else {
+                window.addEventListener('load', doLogout);
+            }
+        })();
+    "##;
+
+    let mut builder = WebviewWindowBuilder::new(
+        &app,
+        label,
+        WebviewUrl::External(parsed_url)
+    )
+    .title("Kick Logout - Kickerino")
+    .inner_size(500.0, 650.0)
+    .visible(false)
+    .initialization_script(js_script);
+
+    if let Some(main) = app.get_webview_window("main") {
+        builder = builder.parent(&main).map_err(|e| e.to_string())?;
+    }
+
+    let window = builder.build().map_err(|e| e.to_string())?;
+
+    let window_clone = window.clone();
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        for _ in 0..30 {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            if app_handle.get_webview_window(window_clone.label()).is_none() {
+                break;
+            }
+            if let Ok(url) = window_clone.url() {
+                let fragment = url.fragment().unwrap_or("");
+                if fragment == "disconnected" {
+                    break;
+                }
+            }
+        }
+        let _ = app_handle.emit("kick-login-event", "disconnected");
+        let _ = window_clone.close();
     });
 
     Ok(())
@@ -680,6 +802,7 @@ pub fn run() {
             close_support_window,
             close_all_support_windows,
             open_login_window,
+            logout_kick,
             send_support_message,
             log_message,
             fetch_channels_emotes,
