@@ -302,7 +302,12 @@ async fn open_login_window(app: AppHandle) -> Result<(), String> {
         (function() {
             console.log('[Kickerino] Monitor de login iniciado.');
             let disconnectedCount = 0;
+            let connectedCount = 0;
             setInterval(() => {
+                // Only use selectors that reliably indicate an authenticated session.
+                // Avoid generic img heuristics — the Kick homepage shows streamer/category
+                // images with non-empty alt text even for logged-out visitors, causing
+                // false positives.
                 const loggedIn = !!(
                     document.querySelector('a[href*="/dashboard"]') ||
                     document.querySelector('a[href*="/studio"]') ||
@@ -310,26 +315,27 @@ async fn open_login_window(app: AppHandle) -> Result<(), String> {
                     document.querySelector('a[href*="/settings"]') ||
                     document.querySelector('a[href*="/following"]') ||
                     document.querySelector('a[href*="/seguindo"]') ||
-                    document.querySelector('[aria-label*="profile" i]') ||
-                    document.querySelector('[aria-label*="account" i]') ||
-                    document.querySelector('[aria-label*="perfil" i]') ||
-                    document.querySelector('[aria-label*="usuário" i]') ||
-                    document.querySelector('[aria-label*="usuario" i]') ||
                     document.querySelector('[id^="headlessui-menu-button"]') ||
                     document.querySelector('.user-menu') ||
-                    Array.from(document.querySelectorAll('img')).find(img => {
-                        const alt = (img.getAttribute('alt') || '').toLowerCase();
-                        const src = (img.getAttribute('src') || '').toLowerCase();
-                        return (src.includes('profile_image') || src.includes('profile_pictures') || src.includes('avatar') || (alt.length > 0 && !alt.includes('kick') && !src.includes('logo') && !alt.includes('banner') && !alt.includes('preview') && !src.includes('cover') && !src.includes('thumbnail')));
-                    })
+                    // Only match avatar images inside user-menu / nav-bar header areas
+                    document.querySelector('nav img[src*="profile_image"]') ||
+                    document.querySelector('nav img[src*="profile_pictures"]') ||
+                    document.querySelector('header img[src*="profile_image"]') ||
+                    document.querySelector('header img[src*="profile_pictures"]') ||
+                    document.querySelector('[class*="user"] img[src*="profile_image"]') ||
+                    document.querySelector('[class*="user"] img[src*="profile_pictures"]')
                 );
                 
                 if (loggedIn) {
                     disconnectedCount = 0;
-                    if (window.location.hash !== "#connected") {
+                    connectedCount++;
+                    // Require 4 consecutive cycles (2 seconds) to confirm connected
+                    // This prevents false positives during page hydration
+                    if (connectedCount >= 4 && window.location.hash !== "#connected") {
                         window.location.hash = "connected";
                     }
                 } else {
+                    connectedCount = 0;
                     const loginBtn = document.querySelector('a[href*="/login"]') ||
                                      document.querySelector('button[data-to*="login" i]') ||
                                      document.querySelector('a[href*="/signup"]') ||
