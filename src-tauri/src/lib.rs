@@ -790,6 +790,65 @@ async fn fetch_missxss_top_watch_time(
     Ok(json)
 }
 
+#[tauri::command]
+async fn install_update(app: AppHandle, url: String) -> Result<(), String> {
+    let client = reqwest::Client::new();
+    let response = client
+        .get(&url)
+        .header(USER_AGENT, "Kickerino/0.1")
+        .send()
+        .await
+        .map_err(|error| format!("Falha ao iniciar download da atualização: {error}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "Falha ao baixar atualização: servidor retornou status {}",
+            response.status()
+        ));
+    }
+
+    let total_size = response.content_length();
+    let app_dir = app.path().app_data_dir()
+        .map_err(|e| format!("Falha ao obter diretório de dados: {}", e))?;
+    
+    let temp_path = app_dir.join("kickerino_setup.exe");
+    
+    let mut file = std::fs::File::create(&temp_path)
+        .map_err(|error| format!("Falha ao criar arquivo temporário: {error}"))?;
+
+    let mut downloaded: u64 = 0;
+    let mut last_emitted_percentage: u32 = 0;
+
+    let mut response = response;
+    while let Some(chunk) = response.chunk().await.map_err(|e| format!("Erro no download: {e}"))? {
+        downloaded += chunk.len() as u64;
+        use std::io::Write;
+        file.write_all(&chunk)
+            .map_err(|error| format!("Falha ao escrever no disco: {error}"))?;
+
+        if let Some(total) = total_size {
+            let percentage = (downloaded as f64 / total as f64 * 100.0) as u32;
+            if percentage > last_emitted_percentage {
+                last_emitted_percentage = percentage;
+                let _ = app.emit("update-download-progress", percentage);
+            }
+        }
+    }
+
+    file.sync_all().map_err(|e| e.to_string())?;
+    drop(file);
+
+    let installer_path = temp_path.to_string_lossy().to_string();
+    std::process::Command::new("cmd")
+        .args(&["/C", "start", "", &installer_path])
+        .spawn()
+        .map_err(|error| format!("Falha ao iniciar o instalador: {error}"))?;
+
+    app.exit(0);
+
+    Ok(())
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -810,7 +869,8 @@ pub fn run() {
             fetch_missxss_top_watch_time,
             has_missxss_api_key,
             save_missxss_api_key,
-            delete_missxss_api_key
+            delete_missxss_api_key,
+            install_update
         ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o Kickerino");

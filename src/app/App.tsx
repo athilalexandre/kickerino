@@ -24,9 +24,10 @@ import { useSoundTimers } from "../hooks/useSoundTimers";
 import { SoundTimersDashboard } from "../components/SoundTimersDashboard";
 
 type UpdateState = {
-  status: "idle" | "checking" | "current" | "available" | "error";
+  status: "idle" | "checking" | "current" | "available" | "error" | "downloading";
   message?: string;
   release?: LatestRelease;
+  progress?: number;
 };
 
 export function App() {
@@ -78,6 +79,48 @@ export function App() {
       unlistenPromise.then((unlisten) => unlisten());
     };
   }, []);
+
+  // Listen to download progress of the updater
+  useEffect(() => {
+    const unlistenPromise = listen<number>("update-download-progress", (event) => {
+      setUpdateState((prev) => ({
+        ...prev,
+        status: "downloading",
+        progress: event.payload,
+        message: `Baixando atualização: ${event.payload}%`,
+      }));
+    });
+
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, []);
+
+  async function handleStartUpdate() {
+    if (!updateState.release || !updateState.release.installerUrl) {
+      if (updateState.release) {
+        void openReleaseDownload(updateState.release);
+      }
+      return;
+    }
+
+    setUpdateState((prev) => ({
+      ...prev,
+      status: "downloading",
+      progress: 0,
+      message: "Iniciando download da atualização...",
+    }));
+
+    try {
+      await invoke("install_update", { url: updateState.release.installerUrl });
+    } catch (error) {
+      setUpdateState((prev) => ({
+        ...prev,
+        status: "error",
+        message: error instanceof Error ? error.message : String(error),
+      }));
+    }
+  }
 
   const visibleChannels = useMemo(() => {
     if (selectedSlug === "all") {
@@ -333,16 +376,27 @@ export function App() {
               )}
 
               {updateState.status !== "idle" && updateState.message && (
-                <section className={`update-banner update-banner--${updateState.status}`}>
-                  <span>{updateState.message}</span>
-                  {updateState.status === "available" && updateState.release && (
-                    <button
-                      type="button"
-                      onClick={() => void openReleaseDownload(updateState.release!)}
-                    >
-                      <Download size={17} />
-                      <span>Baixar</span>
-                    </button>
+                <section className={`update-banner update-banner--${updateState.status}`} style={{ display: "flex", flexDirection: "column", gap: "8px", alignItems: "flex-start" }}>
+                  <div style={{ display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
+                    <span style={{ fontSize: "13px" }}>{updateState.message}</span>
+                    {updateState.status === "available" && updateState.release && (
+                      <button
+                        type="button"
+                        onClick={() => void handleStartUpdate()}
+                        style={{ display: "inline-flex", alignItems: "center", gap: "6px", flexShrink: 0 }}
+                      >
+                        <Download size={17} />
+                        <span>Instalar</span>
+                      </button>
+                    )}
+                  </div>
+                  {updateState.status === "downloading" && (
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px", width: "100%" }}>
+                      <div style={{ flex: 1, height: "6px", background: "rgba(255, 255, 255, 0.1)", borderRadius: "3px", overflow: "hidden" }}>
+                        <div style={{ width: `${updateState.progress ?? 0}%`, height: "100%", background: "#42c773", transition: "width 150ms ease-out" }} />
+                      </div>
+                      <span style={{ fontSize: "12px", minWidth: "32px", textAlign: "right", fontFamily: "monospace" }}>{updateState.progress ?? 0}%</span>
+                    </div>
                   )}
                 </section>
               )}
