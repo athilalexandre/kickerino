@@ -15,29 +15,6 @@ type SupportBotParams = {
   setChannels: React.Dispatch<React.SetStateAction<KickChannel[]>>;
 };
 
-function getMessagesForChannel(slug: string, text: string): string[] {
-  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
-  const specific: string[] = [];
-  const general: string[] = [];
-
-  for (const line of lines) {
-    const sep = line.indexOf("::");
-    if (sep !== -1) {
-      const lineSlug = line.slice(0, sep).trim().toLowerCase();
-      const msg = line.slice(sep + 2).trim();
-      if (lineSlug === slug.toLowerCase() && msg) {
-        specific.push(msg);
-      }
-    } else {
-      if (line) {
-        general.push(line);
-      }
-    }
-  }
-
-  return specific.length > 0 ? specific : general;
-}
-
 function buildSupportScript(
   channelSlug: string,
   chatroomId: number,
@@ -223,9 +200,10 @@ function buildSupportScript(
 
 export function useSupportBot({ channels, settings, setChannels }: SupportBotParams) {
   const [sendQueue, setSendQueue] = useState<QueueItem[]>([]);
-  const [isSending, setIsSending] = useState<boolean>(false);
   const [supportTimers, setSupportTimers] = useState<Record<string, number>>({});
   const timeoutRef = useRef<number | null>(null);
+  const isSendingRef = useRef<boolean>(false);
+  const [isSendingState, setIsSendingState] = useState<boolean>(false);
   const processingRef = useRef<string | null>(null);
 
   const channelsRef = useRef(channels);
@@ -259,7 +237,7 @@ export function useSupportBot({ channels, settings, setChannels }: SupportBotPar
     })
     .map((channel) => channel.slug);
 
-  const activeSlugsSerialized = activeSupportSlugs.join(",");
+  const activeSlugsSerialized = JSON.stringify(activeSupportSlugs);
 
   // Listen to window close events from Rust
   useEffect(() => {
@@ -269,10 +247,11 @@ export function useSupportBot({ channels, settings, setChannels }: SupportBotPar
       if (!active) return;
       const closedLabel = event.payload;
       if (closedLabel === "support-worker") {
-        setIsSending(false);
+        isSendingRef.current = false;
+        setIsSendingState(false);
         processingRef.current = null;
         if (timeoutRef.current) {
-          clearTimeout(timeoutRef.current as any);
+          window.clearTimeout(timeoutRef.current);
           timeoutRef.current = null;
         }
       }
@@ -318,21 +297,22 @@ export function useSupportBot({ channels, settings, setChannels }: SupportBotPar
 
   // Close windows if no channels are active and we are not sending manually
   useEffect(() => {
-    if (activeSupportSlugs.length === 0 && (!isSending || !processingRef.current)) {
+    if (activeSupportSlugs.length === 0 && (!isSendingRef.current || !processingRef.current)) {
       setSendQueue([]);
-      setIsSending(false);
+      isSendingRef.current = false;
+      setIsSendingState(false);
       processingRef.current = null;
       if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current as any);
+        window.clearTimeout(timeoutRef.current);
         timeoutRef.current = null;
       }
       void invoke("close_all_support_windows").catch(() => {});
     }
-  }, [activeSupportSlugs.length, isSending]);
+  }, [activeSupportSlugs.length]);
 
   // Queue worker effect
   useEffect(() => {
-    if (isSending || processingRef.current || sendQueue.length === 0) {
+    if (isSendingRef.current || processingRef.current || sendQueue.length === 0) {
       return;
     }
 
@@ -371,7 +351,8 @@ export function useSupportBot({ channels, settings, setChannels }: SupportBotPar
 
     // Dequeue and mark as sending (using processingRef for immediate synchronous guard)
     processingRef.current = nextSlug;
-    setIsSending(true);
+    isSendingRef.current = true;
+    setIsSendingState(true);
     setSendQueue((q) => q.slice(1));
 
     const runWorker = async () => {
@@ -392,7 +373,8 @@ export function useSupportBot({ channels, settings, setChannels }: SupportBotPar
       if (!chatroomId) {
         console.error(`[useSupportBot] Nao foi possivel obter o Chatroom ID para ${nextSlug}. Abortando envio.`);
         processingRef.current = null;
-        setIsSending(false);
+        isSendingRef.current = false;
+        setIsSendingState(false);
         return;
       }
 
@@ -456,28 +438,29 @@ export function useSupportBot({ channels, settings, setChannels }: SupportBotPar
       try {
         await invoke("open_support_window", { slug: nextSlug, jsScript: js_script });
         if (timeoutRef.current) {
-          clearTimeout(timeoutRef.current as any);
+          window.clearTimeout(timeoutRef.current);
         }
-        timeoutRef.current = setTimeout(() => {
+        timeoutRef.current = window.setTimeout(() => {
           timeoutRef.current = null;
           invoke("close_support_window", { slug: nextSlug })
             .catch((err) => console.error(`[Kickerino] Erro ao fechar janela para ${nextSlug}:`, err))
             .finally(() => {
               processingRef.current = null;
-              setIsSending(false);
+              isSendingRef.current = false;
+              setIsSendingState(false);
             });
-        }, 20000) as any;
+        }, 20000);
       } catch (err) {
         console.error(`[Kickerino] Falha ao abrir janela para ${nextSlug}:`, err);
         processingRef.current = null;
-        setIsSending(false);
+        isSendingRef.current = false;
+        setIsSendingState(false);
       }
     };
 
     void runWorker();
   }, [
     sendQueue,
-    isSending,
     activeSupportSlugs.length,
     settings.supportPreferredQuality,
     settings.supportQualityCheckSeconds,
@@ -488,7 +471,7 @@ export function useSupportBot({ channels, settings, setChannels }: SupportBotPar
 
   // Countdown timer loop
   useEffect(() => {
-    const slugs = activeSlugsSerialized ? activeSlugsSerialized.split(",") : [];
+    const slugs = activeSupportSlugs;
     if (slugs.length === 0) {
       setSupportTimers({});
       return;
@@ -572,7 +555,7 @@ export function useSupportBot({ channels, settings, setChannels }: SupportBotPar
   useEffect(() => {
     return () => {
       if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current as any);
+        window.clearTimeout(timeoutRef.current);
       }
       void invoke("close_all_support_windows").catch(() => {});
     };

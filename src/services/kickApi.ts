@@ -13,13 +13,17 @@ type KickChannelPayload = {
 };
 
 export function normalizeSlug(value: string) {
-  return value
+  const cleaned = value
     .trim()
     .replace(/^https?:\/\/(www\.)?kick\.com\//i, "")
     .replace(/^@/, "")
     .split(/[/?#]/)[0]
     .replace(/\/+$/, "")
     .toLowerCase();
+
+  // Validate character set: only ascii alphanumeric, underscores, and hyphens (matches Rust validation)
+  const isValid = /^[a-z0-9_-]+$/i.test(cleaned);
+  return isValid ? cleaned : "";
 }
 
 export async function resolveKickChannel(slug: string): Promise<KickChannel> {

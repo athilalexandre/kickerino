@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { ViewerStats, ClosedWeekRecord, ReciprocitySettings } from "../types/reciprocity";
+import type { ViewerStats, ClosedWeekRecord, ReciprocitySettings, RankingResult } from "../types/reciprocity";
 import {
   loadBlockedUsers,
   saveBlockedUsers,
@@ -87,16 +87,26 @@ export function useReciprocity() {
     void checkApiKeyStatus();
   }, [checkApiKeyStatus]);
 
-  // Compute rankings
-  const previousRanks = loadPreviousRanks();
-  const rankings = calculateRankings(
-    currentWeekData,
-    closedWeeks,
-    blockedUsers,
-    selectedMode,
-    settings,
-    previousRanks
-  );
+  // Memoize previousRanks
+  const previousRanks = useMemo(() => loadPreviousRanks(), []);
+  
+  // Memoize rankings
+  const rankings = useMemo(() => {
+    return calculateRankings(
+      currentWeekData,
+      closedWeeks,
+      blockedUsers,
+      selectedMode,
+      settings,
+      previousRanks
+    );
+  }, [currentWeekData, closedWeeks, blockedUsers, selectedMode, settings, previousRanks]);
+
+  // Keep a ref of rankings so syncWatchTime can read it without depending on it
+  const rankingsRef = useRef(rankings);
+  useEffect(() => {
+    rankingsRef.current = rankings;
+  }, [rankings]);
 
   const blockUser = (platform: string, username: string) => {
     const key = `${platform.toLowerCase()}:${username.toLowerCase()}`;
@@ -253,7 +263,7 @@ export function useReciprocity() {
 
       // Cache ranks before saving new stats to determine trends on the next tick
       const currentRanks: { [key: string]: number } = {};
-      rankings.forEach((r) => {
+      rankingsRef.current.forEach((r: RankingResult) => {
         const key = `${r.platform.toLowerCase()}:${r.username.toLowerCase()}`;
         currentRanks[key] = r.rank;
       });
@@ -269,7 +279,7 @@ export function useReciprocity() {
       setIsSyncing(false);
       void checkApiKeyStatus();
     }
-  }, [rankings, settings.minutesPerPoint, checkApiKeyStatus]);
+  }, [settings.minutesPerPoint, checkApiKeyStatus]);
 
   // Setup auto polling interval
   useEffect(() => {

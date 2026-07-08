@@ -33,8 +33,10 @@ export function SoundTimersDashboard({
 
   // Form states
   const [name, setName] = useState("");
-  const [type, setType] = useState<"hourly" | "interval">("interval");
+  const [type, setType] = useState<"hourly" | "interval" | "hourly_minute" | "specific_time">("interval");
   const [intervalMinutes, setIntervalMinutes] = useState(15);
+  const [minuteOfHour, setMinuteOfHour] = useState(50);
+  const [specificTime, setSpecificTime] = useState("12:00");
   const [volume, setVolume] = useState(70);
   const [soundDataUrl, setSoundDataUrl] = useState<string | undefined>(undefined);
   const [soundFileName, setSoundFileName] = useState<string | undefined>(undefined);
@@ -52,6 +54,8 @@ export function SoundTimersDashboard({
     setName("");
     setType("interval");
     setIntervalMinutes(15);
+    setMinuteOfHour(50);
+    setSpecificTime("12:00");
     setVolume(70);
     setSoundDataUrl(undefined);
     setSoundFileName(undefined);
@@ -63,6 +67,8 @@ export function SoundTimersDashboard({
     setName(timer.name);
     setType(timer.type);
     setIntervalMinutes(timer.intervalMinutes);
+    setMinuteOfHour(timer.minuteOfHour ?? 50);
+    setSpecificTime(timer.specificTime ?? "12:00");
     setVolume(timer.volume);
     setSoundDataUrl(timer.soundDataUrl);
     setSoundFileName(timer.soundFileName);
@@ -100,6 +106,8 @@ export function SoundTimersDashboard({
       name: name.trim(),
       type,
       intervalMinutes: type === "hourly" ? 60 : Math.max(1, intervalMinutes),
+      minuteOfHour: type === "hourly_minute" ? minuteOfHour : undefined,
+      specificTime: type === "specific_time" ? specificTime : undefined,
       volume,
       soundDataUrl,
       soundFileName,
@@ -121,7 +129,7 @@ export function SoundTimersDashboard({
     if (t.type === "interval") {
       const intervalMs = t.intervalMinutes * 60 * 1000;
       nextRun = (t.lastTriggeredAt || t.createdAt) + intervalMs;
-    } else {
+    } else if (t.type === "hourly") {
       // hourly: next hour start
       const currentDate = new Date(now);
       const nextHourDate = new Date(
@@ -134,6 +142,40 @@ export function SoundTimersDashboard({
         0
       );
       nextRun = nextHourDate.getTime();
+    } else if (t.type === "hourly_minute") {
+      const targetMinute = t.minuteOfHour ?? 0;
+      const currentDate = new Date(now);
+      let nextRunDate = new Date(
+        currentDate.getFullYear(),
+        currentDate.getMonth(),
+        currentDate.getDate(),
+        currentDate.getHours(),
+        targetMinute,
+        0,
+        0
+      );
+      if (nextRunDate.getTime() <= now) {
+        nextRunDate.setHours(nextRunDate.getHours() + 1);
+      }
+      nextRun = nextRunDate.getTime();
+    } else if (t.type === "specific_time") {
+      const [hoursStr, minutesStr] = (t.specificTime || "00:00").split(":");
+      const targetHours = parseInt(hoursStr, 10) || 0;
+      const targetMinutes = parseInt(minutesStr, 10) || 0;
+      const currentDate = new Date(now);
+      let nextRunDate = new Date(
+        currentDate.getFullYear(),
+        currentDate.getMonth(),
+        currentDate.getDate(),
+        targetHours,
+        targetMinutes,
+        0,
+        0
+      );
+      if (nextRunDate.getTime() <= now) {
+        nextRunDate.setDate(nextRunDate.getDate() + 1);
+      }
+      nextRun = nextRunDate.getTime();
     }
 
     const diffMs = nextRun - now;
@@ -227,7 +269,7 @@ export function SoundTimersDashboard({
               <label style={{ fontSize: "12px", color: "#8fa1a8", fontWeight: "600" }}>Frequência/Tempo</label>
               <select 
                 value={type}
-                onChange={(e) => setType(e.target.value as "hourly" | "interval")}
+                onChange={(e) => setType(e.target.value as any)}
                 style={{
                   height: "38px",
                   background: "#101417",
@@ -240,36 +282,103 @@ export function SoundTimersDashboard({
               >
                 <option value="interval">A cada X minutos</option>
                 <option value="hourly">De hora em hora (no início da hora)</option>
+                <option value="hourly_minute">De hora em hora (no minuto X)</option>
+                <option value="specific_time">Horário específico diário (HH:MM)</option>
               </select>
             </div>
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-            {/* Interval in Minutes (only for type: interval) */}
+            {/* Dynamic input depending on type */}
             <div style={{ 
               display: "flex", 
               flexDirection: "column", 
-              gap: "6px", 
+              gap: "6px",
               opacity: type === "hourly" ? 0.4 : 1,
               pointerEvents: type === "hourly" ? "none" : "auto"
             }}>
-              <label style={{ fontSize: "12px", color: "#8fa1a8", fontWeight: "600" }}>Minutos (intervalo)</label>
-              <input 
-                type="number" 
-                min={1}
-                required={type === "interval"}
-                value={intervalMinutes}
-                onChange={(e) => setIntervalMinutes(Number(e.target.value))}
-                style={{
-                  height: "38px",
-                  background: "#101417",
-                  border: "1px solid #2a3338",
-                  borderRadius: "6px",
-                  color: "#edf4f6",
-                  padding: "0 12px",
-                  outline: "none",
-                }}
-              />
+              {type === "interval" && (
+                <>
+                  <label style={{ fontSize: "12px", color: "#8fa1a8", fontWeight: "600" }}>Minutos (intervalo)</label>
+                  <input 
+                    type="number" 
+                    min={1}
+                    required
+                    value={intervalMinutes}
+                    onChange={(e) => setIntervalMinutes(Number(e.target.value))}
+                    style={{
+                      height: "38px",
+                      background: "#101417",
+                      border: "1px solid #2a3338",
+                      borderRadius: "6px",
+                      color: "#edf4f6",
+                      padding: "0 12px",
+                      outline: "none",
+                    }}
+                  />
+                </>
+              )}
+              {type === "hourly" && (
+                <>
+                  <label style={{ fontSize: "12px", color: "#8fa1a8", fontWeight: "600" }}>Minuto do Alerta</label>
+                  <input 
+                    type="text" 
+                    disabled
+                    value="0 (Início de cada hora)"
+                    style={{
+                      height: "38px",
+                      background: "#101417",
+                      border: "1px solid #2a3338",
+                      borderRadius: "6px",
+                      color: "#8fa1a8",
+                      padding: "0 12px",
+                      outline: "none",
+                    }}
+                  />
+                </>
+              )}
+              {type === "hourly_minute" && (
+                <>
+                  <label style={{ fontSize: "12px", color: "#8fa1a8", fontWeight: "600" }}>Minuto da Hora (0 a 59)</label>
+                  <input 
+                    type="number" 
+                    min={0}
+                    max={59}
+                    required
+                    value={minuteOfHour}
+                    onChange={(e) => setMinuteOfHour(Number(e.target.value))}
+                    style={{
+                      height: "38px",
+                      background: "#101417",
+                      border: "1px solid #2a3338",
+                      borderRadius: "6px",
+                      color: "#edf4f6",
+                      padding: "0 12px",
+                      outline: "none",
+                    }}
+                  />
+                </>
+              )}
+              {type === "specific_time" && (
+                <>
+                  <label style={{ fontSize: "12px", color: "#8fa1a8", fontWeight: "600" }}>Horário do Alerta (HH:MM)</label>
+                  <input 
+                    type="time" 
+                    required
+                    value={specificTime}
+                    onChange={(e) => setSpecificTime(e.target.value)}
+                    style={{
+                      height: "38px",
+                      background: "#101417",
+                      border: "1px solid #2a3338",
+                      borderRadius: "6px",
+                      color: "#edf4f6",
+                      padding: "0 12px",
+                      outline: "none",
+                    }}
+                  />
+                </>
+              )}
             </div>
 
             {/* Volume slider */}
@@ -444,7 +553,13 @@ export function SoundTimersDashboard({
                       {t.name}
                     </h4>
                     <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#8fa1a8" }}>
-                      {t.type === "hourly" ? "De hora em hora" : `A cada ${t.intervalMinutes} minutos`}
+                      {t.type === "hourly"
+                        ? "De hora em hora"
+                        : t.type === "hourly_minute"
+                        ? `De hora em hora (minuto ${t.minuteOfHour})`
+                        : t.type === "specific_time"
+                        ? `Horário diário (${t.specificTime})`
+                        : `A cada ${t.intervalMinutes} minutos`}
                       <span style={{ margin: "0 6px" }}>•</span>
                       Volume: {t.volume}%
                       <span style={{ margin: "0 6px" }}>•</span>

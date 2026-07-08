@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useReciprocity } from "../../hooks/useReciprocity";
+import type { RankingResult } from "../../types/reciprocity";
 import { BlockedUserManager } from "./BlockedUserManager";
 import { FriendDetails } from "./FriendDetails";
 import { ReciprocitySettingsPanel } from "./ReciprocitySettingsPanel";
@@ -47,8 +48,8 @@ export function ReciprocityDashboard() {
 
   // Overview calculations
   const totalTracked = rankings.length;
-  const activeCount = rankings.filter((r) => r.status === "Active").length;
-  const droppingCount = rankings.filter((r) => r.status === "Dropping").length;
+  const activeCount = rankings.filter((r: RankingResult) => r.status === "Active").length;
+  const droppingCount = rankings.filter((r: RankingResult) => r.status === "Dropping").length;
   const blockedCount = blockedUsers.length;
 
   const handleOpenDetails = (username: string, platform: any) => {
@@ -283,7 +284,7 @@ export function ReciprocityDashboard() {
               </tr>
             </thead>
             <tbody>
-              {rankings.map((result, idx) => {
+              {rankings.map((result: RankingResult, idx: number) => {
                 // Trend rendering
                 let trendIcon = <Minus size={16} className="trend-icon trend-icon--stable" />;
                 if (result.trendDirection === "up") {

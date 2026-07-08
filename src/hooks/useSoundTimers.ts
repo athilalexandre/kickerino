@@ -49,6 +49,12 @@ export function useSoundTimers() {
           if (updates.type !== undefined && updates.type !== t.type) {
             lastTriggeredAt = undefined;
           }
+          if (updates.minuteOfHour !== undefined && updates.minuteOfHour !== t.minuteOfHour) {
+            lastTriggeredAt = undefined;
+          }
+          if (updates.specificTime !== undefined && updates.specificTime !== t.specificTime) {
+            lastTriggeredAt = undefined;
+          }
           return {
             ...t,
             ...updates,
@@ -105,6 +111,68 @@ export function useSoundTimers() {
             ).getTime();
 
             if (currentHourStart > baselineHourStart) {
+              shouldTrigger = true;
+            }
+          } else if (t.type === "hourly_minute") {
+            const currentDate = new Date(now);
+            const targetMinute = t.minuteOfHour ?? 0;
+            let targetTime = new Date(
+              currentDate.getFullYear(),
+              currentDate.getMonth(),
+              currentDate.getDate(),
+              currentDate.getHours(),
+              targetMinute,
+              0,
+              0
+            ).getTime();
+
+            if (targetTime > now) {
+              targetTime = new Date(
+                currentDate.getFullYear(),
+                currentDate.getMonth(),
+                currentDate.getDate(),
+                currentDate.getHours() - 1,
+                targetMinute,
+                0,
+                0
+              ).getTime();
+            }
+
+            const baseline = t.lastTriggeredAt || t.createdAt;
+            if (now >= targetTime && baseline < targetTime) {
+              shouldTrigger = true;
+            }
+          } else if (t.type === "specific_time") {
+            const [hoursStr, minutesStr] = (t.specificTime || "00:00").split(":");
+            const targetHours = parseInt(hoursStr, 10) || 0;
+            const targetMinutes = parseInt(minutesStr, 10) || 0;
+            const currentDate = new Date(now);
+            let targetTime = new Date(
+              currentDate.getFullYear(),
+              currentDate.getMonth(),
+              currentDate.getDate(),
+              targetHours,
+              targetMinutes,
+              0,
+              0
+            ).getTime();
+
+            if (targetTime > now) {
+              const yesterday = new Date(now);
+              yesterday.setDate(yesterday.getDate() - 1);
+              targetTime = new Date(
+                yesterday.getFullYear(),
+                yesterday.getMonth(),
+                yesterday.getDate(),
+                targetHours,
+                targetMinutes,
+                0,
+                0
+              ).getTime();
+            }
+
+            const baseline = t.lastTriggeredAt || t.createdAt;
+            if (now >= targetTime && baseline < targetTime) {
               shouldTrigger = true;
             }
           }

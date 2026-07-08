@@ -7,7 +7,7 @@ import type { KickChannel } from "../types/channel";
 import type { AppSettings } from "../types/settings";
 
 export type AppToast = {
-  id: number;
+  id: string;
   message: string;
 };
 
@@ -26,10 +26,16 @@ export function useLiveMonitor({
   const [toasts, setToasts] = useState<AppToast[]>([]);
   const channelsRef = useRef(channels);
   const checkingRef = useRef(false);
+  const settingsRef = useRef(settings);
+  const notifiedLiveSlugsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     channelsRef.current = channels;
   }, [channels]);
+
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
 
   const liveCount = useMemo(
     () => channels.filter((channel) => channel.status === "live").length,
@@ -37,7 +43,7 @@ export function useLiveMonitor({
   );
 
   const pushToast = useCallback((message: string) => {
-    const id = Date.now();
+    const id = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 9);
     setToasts((current) => [...current, { id, message }]);
     window.setTimeout(() => {
       setToasts((current) => current.filter((toast) => toast.id !== id));
@@ -81,8 +87,18 @@ export function useLiveMonitor({
           lastWentLiveAt,
         };
 
-        if (previous.status === "offline" && next.status === "live") {
-          liveTransitions.push(next);
+        // Transition from offline or unknown to live, and make sure we haven't already notified for this live session
+        if (
+          (previous.status === "offline" || previous.status === "unknown") &&
+          next.status === "live"
+        ) {
+          if (!notifiedLiveSlugsRef.current.has(next.slug)) {
+            liveTransitions.push(next);
+            notifiedLiveSlugsRef.current.add(next.slug);
+          }
+        } else if (next.status === "offline") {
+          // If offline, remove from notified set so we can notify again when they go live next time
+          notifiedLiveSlugsRef.current.delete(next.slug);
         }
 
         return next;
@@ -90,12 +106,13 @@ export function useLiveMonitor({
 
       setChannels(merged);
 
+      const currentSettings = settingsRef.current;
       for (const channel of liveTransitions) {
         pushToast(`${channel.username ?? channel.slug} entrou ao vivo`);
-        if (settings.soundEnabled) {
+        if (currentSettings.soundEnabled) {
           playLiveAlert();
         }
-        if (settings.notificationsEnabled) {
+        if (currentSettings.notificationsEnabled) {
           void notifyLive(channel);
         }
       }
@@ -103,20 +120,36 @@ export function useLiveMonitor({
       checkingRef.current = false;
       setIsChecking(false);
     }
-  }, [pushToast, setChannels, settings.notificationsEnabled, settings.soundEnabled]);
+  }, [pushToast, setChannels]);
+
+  // Keep a ref of refreshAll to break dependency chain in useEffect
+  const refreshAllRef = useRef(refreshAll);
+  useEffect(() => {
+    refreshAllRef.current = refreshAll;
+  }, [refreshAll]);
 
   useEffect(() => {
     const intervalMs = Math.max(settings.checkIntervalSeconds, 15) * 1000;
     const handle = window.setInterval(() => {
-      void refreshAll();
+      void refreshAllRef.current();
     }, intervalMs);
 
     return () => window.clearInterval(handle);
-  }, [refreshAll, settings.checkIntervalSeconds]);
+  }, [settings.checkIntervalSeconds]);
 
+  // Only trigger refresh when channel list length changes, using ref to avoid loop
+  const prevLengthRef = useRef(channels.length);
   useEffect(() => {
-    void refreshAll();
-  }, [channels.length, refreshAll]);
+    if (channels.length !== prevLengthRef.current) {
+      prevLengthRef.current = channels.length;
+      void refreshAllRef.current();
+    }
+  }, [channels.length]);
+
+  // Initial fetch
+  useEffect(() => {
+    void refreshAllRef.current();
+  }, []);
 
   return {
     isChecking,
