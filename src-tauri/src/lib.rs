@@ -4,7 +4,7 @@ use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use std::fs::File;
 use std::io::BufReader;
-use rodio::{Decoder, OutputStream, Sink, Source};
+use rodio::{Decoder, DeviceSinkBuilder, Player, Source};
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -82,43 +82,42 @@ async fn select_sound_file() -> Result<Option<(String, String)>, String> {
 fn play_sound_rust(path: Option<String>, volume_percent: f32) -> Result<(), String> {
     let volume = volume_percent / 100.0;
     std::thread::spawn(move || {
-        if let Ok((_stream, stream_handle)) = OutputStream::try_default() {
-            if let Ok(sink) = Sink::try_new(&stream_handle) {
-                sink.set_volume(volume);
-                
-                // Play custom file if provided
-                if let Some(ref path_str) = path {
-                    if !path_str.is_empty() {
-                        if let Ok(file) = File::open(path_str) {
-                            let reader = BufReader::new(file);
-                            if let Ok(source) = Decoder::new(reader) {
-                                sink.append(source);
-                                sink.sleep_until_end();
-                                return;
-                            }
+        if let Ok(mixer_device_sink) = DeviceSinkBuilder::open_default_sink() {
+            let player = Player::connect_new(&mixer_device_sink.mixer());
+            player.set_volume(volume);
+            
+            // Play custom file if provided
+            if let Some(ref path_str) = path {
+                if !path_str.is_empty() {
+                    if let Ok(file) = File::open(path_str) {
+                        let reader = BufReader::new(file);
+                        if let Ok(source) = Decoder::new(reader) {
+                            player.append(source);
+                            player.sleep_until_end();
+                            return;
                         }
                     }
                 }
-                
-                // Fallback to default synthesized beep
-                let c5 = rodio::source::SineWave::new(523.25)
-                    .take_duration(std::time::Duration::from_millis(150));
-                let e5 = rodio::source::SineWave::new(659.25)
-                    .take_duration(std::time::Duration::from_millis(150));
-                let g5 = rodio::source::SineWave::new(783.99)
-                    .take_duration(std::time::Duration::from_millis(150));
-                let c6 = rodio::source::SineWave::new(1046.50)
-                    .take_duration(std::time::Duration::from_millis(300));
-                
-                sink.append(c5);
-                std::thread::sleep(std::time::Duration::from_millis(100));
-                sink.append(e5);
-                std::thread::sleep(std::time::Duration::from_millis(100));
-                sink.append(g5);
-                std::thread::sleep(std::time::Duration::from_millis(100));
-                sink.append(c6);
-                sink.sleep_until_end();
             }
+            
+            // Fallback to default synthesized beep
+            let c5 = rodio::source::SineWave::new(523.25)
+                .take_duration(std::time::Duration::from_millis(150));
+            let e5 = rodio::source::SineWave::new(659.25)
+                .take_duration(std::time::Duration::from_millis(150));
+            let g5 = rodio::source::SineWave::new(783.99)
+                .take_duration(std::time::Duration::from_millis(150));
+            let c6 = rodio::source::SineWave::new(1046.50)
+                .take_duration(std::time::Duration::from_millis(300));
+            
+            player.append(c5);
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            player.append(e5);
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            player.append(g5);
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            player.append(c6);
+            player.sleep_until_end();
         }
     });
     Ok(())
