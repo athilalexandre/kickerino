@@ -101,12 +101,12 @@ export function ChannelCard({
         if (openLiveOnDoubleClick) void openKickChannel(channel.slug);
       }}
     >
-      <div style={{ display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "12px", width: "100%" }}>
         <button
           className="channel-card__main"
           type="button"
           onClick={() => onSelect(channel.slug)}
-          style={{ flex: 1 }}
+          style={{ width: "100%" }}
         >
           <ChannelAvatar src={channel.avatarUrl} name={displayName} />
           <span className="channel-card__body">
@@ -144,7 +144,7 @@ export function ChannelCard({
           </span>
         </button>
 
-        <div className="channel-card__actions" style={{ marginLeft: "10px" }}>
+        <div className="channel-card__actions" style={{ display: "flex", justifyContent: "flex-end", gap: "8px", borderTop: "1px solid #242b30", paddingTop: "10px", width: "100%" }}>
           {isSupported && onSendNow && (
             <button
               className="icon-button icon-button--success"
