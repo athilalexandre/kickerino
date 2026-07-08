@@ -2,6 +2,9 @@ use reqwest::header::{ACCEPT, USER_AGENT};
 use serde::Serialize;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+use std::fs::File;
+use std::io::BufReader;
+use rodio::{Decoder, OutputStream, Sink, Source};
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -58,6 +61,69 @@ async fn fetch_kick_channel(slug: String) -> Result<KickChannelPayload, String> 
 
     Ok(map_kick_channel(slug, &json))
 }
+
+#[tauri::command]
+async fn select_sound_file() -> Result<Option<(String, String)>, String> {
+    let file = rfd::AsyncFileDialog::new()
+        .add_filter("Som", &["mp3", "wav", "ogg", "flac", "m4a", "aac"])
+        .pick_file()
+        .await;
+
+    if let Some(file_handle) = file {
+        let path = file_handle.path().to_string_lossy().to_string();
+        let name = file_handle.file_name();
+        Ok(Some((path, name)))
+    } else {
+        Ok(None)
+    }
+}
+
+#[tauri::command]
+fn play_sound_rust(path: Option<String>, volume_percent: f32) -> Result<(), String> {
+    let volume = volume_percent / 100.0;
+    std::thread::spawn(move || {
+        if let Ok((_stream, stream_handle)) = OutputStream::try_default() {
+            if let Ok(sink) = Sink::try_new(&stream_handle) {
+                sink.set_volume(volume);
+                
+                // Play custom file if provided
+                if let Some(ref path_str) = path {
+                    if !path_str.is_empty() {
+                        if let Ok(file) = File::open(path_str) {
+                            let reader = BufReader::new(file);
+                            if let Ok(source) = Decoder::new(reader) {
+                                sink.append(source);
+                                sink.sleep_until_end();
+                                return;
+                            }
+                        }
+                    }
+                }
+                
+                // Fallback to default synthesized beep
+                let c5 = rodio::source::SineWave::new(523.25)
+                    .take_duration(std::time::Duration::from_millis(150));
+                let e5 = rodio::source::SineWave::new(659.25)
+                    .take_duration(std::time::Duration::from_millis(150));
+                let g5 = rodio::source::SineWave::new(783.99)
+                    .take_duration(std::time::Duration::from_millis(150));
+                let c6 = rodio::source::SineWave::new(1046.50)
+                    .take_duration(std::time::Duration::from_millis(300));
+                
+                sink.append(c5);
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                sink.append(e5);
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                sink.append(g5);
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                sink.append(c6);
+                sink.sleep_until_end();
+            }
+        }
+    });
+    Ok(())
+}
+
 
 #[tauri::command]
 fn app_version() -> String {
@@ -870,10 +936,10 @@ pub fn run() {
             has_missxss_api_key,
             save_missxss_api_key,
             delete_missxss_api_key,
-            install_update
+            install_update,
+            select_sound_file,
+            play_sound_rust
         ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o Kickerino");
 }
-
-

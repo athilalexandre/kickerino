@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { ReciprocitySettings } from "../../types/reciprocity";
 import { Save, RotateCcw, Key, Eye, EyeOff, Trash2, CheckCircle2 } from "lucide-react";
 import { defaultReciprocitySettings } from "../../services/reciprocityStorage";
+import { ConfirmModal } from "../ConfirmModal";
 
 interface ReciprocitySettingsPanelProps {
   settings: ReciprocitySettings;
@@ -30,6 +31,7 @@ export function ReciprocitySettingsPanel({
   const [isChangingKey, setIsChangingKey] = useState(!hasApiKey);
   const [apiKeyError, setApiKeyError] = useState<string | null>(null);
   const [apiKeySuccess, setApiKeySuccess] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,14 +70,7 @@ export function ReciprocitySettingsPanel({
 
   const handleDeleteApiKey = async (e: React.MouseEvent) => {
     e.preventDefault();
-    if (confirm("Tem certeza que deseja excluir a chave API salva? Os próximos sincronismos falharão.")) {
-      try {
-        await onDeleteApiKey();
-        setIsChangingKey(true);
-      } catch (err: any) {
-        setApiKeyError(err.message || "Erro ao deletar a chave API.");
-      }
-    }
+    setShowDeleteConfirm(true);
   };
 
   return (
@@ -233,6 +228,25 @@ export function ReciprocitySettingsPanel({
           </div>
         </div>
       </form>
+
+      <ConfirmModal
+        isOpen={showDeleteConfirm}
+        title="Excluir Chave API"
+        message="Tem certeza que deseja excluir a chave API salva? Os próximos sincronismos falharão."
+        onConfirm={async () => {
+          try {
+            await onDeleteApiKey();
+            setIsChangingKey(true);
+          } catch (err: any) {
+            setApiKeyError(err.message || "Erro ao deletar a chave API.");
+          } finally {
+            setShowDeleteConfirm(false);
+          }
+        }}
+        onCancel={() => setShowDeleteConfirm(false)}
+        confirmText="Excluir"
+        cancelText="Cancelar"
+      />
     </div>
   );
 }

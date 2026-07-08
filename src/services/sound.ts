@@ -1,3 +1,5 @@
+import { invoke } from "@tauri-apps/api/core";
+
 export function playLiveAlert() {
   const AudioContextClass = window.AudioContext ?? window.webkitAudioContext;
   if (!AudioContextClass) {
@@ -78,23 +80,9 @@ export function playDefaultTimerAlert(volume: number) {
   }
 }
 
-export function playSound(volumePercent: number, soundDataUrl?: string) {
-  const volume = volumePercent / 100;
-  if (soundDataUrl) {
-    try {
-      const audio = new Audio(soundDataUrl);
-      audio.volume = volume;
-      audio.play().catch((err) => {
-        console.error("Error playing custom sound:", err);
-        playDefaultTimerAlert(volume);
-      });
-    } catch (err) {
-      console.error("Error creating audio element for custom sound:", err);
-      playDefaultTimerAlert(volume);
-    }
-  } else {
-    playDefaultTimerAlert(volume);
-  }
+export function playSound(volumePercent: number, soundFilePath?: string) {
+  invoke("play_sound_rust", { path: soundFilePath || null, volumePercent })
+    .catch((err) => console.error("Error playing sound in Rust:", err));
 }
 
 declare global {

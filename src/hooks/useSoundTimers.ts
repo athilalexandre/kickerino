@@ -181,7 +181,7 @@ export function useSoundTimers() {
             hasChanges = true;
             
             // Trigger sound & notification
-            playSound(t.volume, t.soundDataUrl);
+            playSound(t.volume, t.soundFilePath);
             void notifyTimerTriggered(t.name);
 
             return {

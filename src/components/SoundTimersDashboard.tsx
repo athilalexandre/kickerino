@@ -12,8 +12,10 @@ import {
   Edit2, 
   AlertCircle 
 } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
 import type { SoundTimer } from "../types/timer";
 import { playSound } from "../services/sound";
+import { ConfirmModal } from "./ConfirmModal";
 
 interface SoundTimersDashboardProps {
   timers: SoundTimer[];
@@ -30,6 +32,7 @@ export function SoundTimersDashboard({
 }: SoundTimersDashboardProps) {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingTimerId, setEditingTimerId] = useState<string | null>(null);
+  const [timerToDelete, setTimerToDelete] = useState<SoundTimer | null>(null);
 
   // Form states
   const [name, setName] = useState("");
@@ -38,7 +41,7 @@ export function SoundTimersDashboard({
   const [minuteOfHour, setMinuteOfHour] = useState(50);
   const [specificTime, setSpecificTime] = useState("12:00");
   const [volume, setVolume] = useState(70);
-  const [soundDataUrl, setSoundDataUrl] = useState<string | undefined>(undefined);
+  const [soundFilePath, setSoundFilePath] = useState<string | undefined>(undefined);
   const [soundFileName, setSoundFileName] = useState<string | undefined>(undefined);
 
   // Ticker state to refresh countdowns every second
@@ -57,7 +60,7 @@ export function SoundTimersDashboard({
     setMinuteOfHour(50);
     setSpecificTime("12:00");
     setVolume(70);
-    setSoundDataUrl(undefined);
+    setSoundFilePath(undefined);
     setSoundFileName(undefined);
     setEditingTimerId(null);
     setIsFormOpen(false);
@@ -70,32 +73,27 @@ export function SoundTimersDashboard({
     setMinuteOfHour(timer.minuteOfHour ?? 50);
     setSpecificTime(timer.specificTime ?? "12:00");
     setVolume(timer.volume);
-    setSoundDataUrl(timer.soundDataUrl);
+    setSoundFilePath(timer.soundFilePath);
     setSoundFileName(timer.soundFileName);
     setEditingTimerId(timer.id);
     setIsFormOpen(true);
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.size > 2 * 1024 * 1024) {
-      alert("O arquivo de som deve ter no máximo 2MB.");
-      return;
+  const handleSelectSoundFile = async () => {
+    try {
+      const selected = await invoke<[string, string] | null>("select_sound_file");
+      if (selected) {
+        const [path, name] = selected;
+        setSoundFilePath(path);
+        setSoundFileName(name);
+      }
+    } catch (err) {
+      console.error("Erro ao selecionar arquivo de som:", err);
     }
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
-      setSoundDataUrl(dataUrl);
-      setSoundFileName(file.name);
-    };
-    reader.readAsDataURL(file);
   };
 
   const handleTestSound = () => {
-    playSound(volume, soundDataUrl);
+    playSound(volume, soundFilePath);
   };
 
   const handleSave = (e: React.FormEvent) => {
@@ -109,7 +107,7 @@ export function SoundTimersDashboard({
       minuteOfHour: type === "hourly_minute" ? minuteOfHour : undefined,
       specificTime: type === "specific_time" ? specificTime : undefined,
       volume,
-      soundDataUrl,
+      soundFilePath,
       soundFileName,
     };
 
@@ -422,24 +420,11 @@ export function SoundTimersDashboard({
               <button
                 type="button"
                 className="btn btn--secondary"
-                style={{ position: "relative", overflow: "hidden", display: "flex", gap: "6px" }}
+                style={{ display: "flex", gap: "6px", alignItems: "center" }}
+                onClick={handleSelectSoundFile}
               >
                 <Upload size={14} />
-                <span>Upload de Som</span>
-                <input 
-                  type="file" 
-                  accept="audio/*"
-                  onChange={handleFileUpload}
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    opacity: 0,
-                    width: "100%",
-                    height: "100%",
-                    cursor: "pointer"
-                  }}
-                />
+                <span>Anexar Som</span>
               </button>
               
               <div style={{ fontSize: "12px", color: "#8fa1a8", flex: 1, minWidth: "150px" }}>
@@ -448,7 +433,7 @@ export function SoundTimersDashboard({
                     ✓ {soundFileName}
                   </span>
                 ) : (
-                  <span>Nenhum arquivo enviado (usando som padrão)</span>
+                  <span>Nenhum som anexado (usando som padrão)</span>
                 )}
               </div>
 
@@ -458,7 +443,7 @@ export function SoundTimersDashboard({
                   className="btn btn--danger"
                   style={{ height: "30px", padding: "0 10px" }}
                   onClick={() => {
-                    setSoundDataUrl(undefined);
+                    setSoundFilePath(undefined);
                     setSoundFileName(undefined);
                   }}
                 >
@@ -478,7 +463,7 @@ export function SoundTimersDashboard({
               </button>
             </div>
             <p style={{ margin: 0, fontSize: "11px", color: "#8fa1a8" }}>
-              Formatos aceitos: MP3, WAV, OGG. Limite: 2MB.
+              Associe um arquivo de som local (MP3, WAV, OGG, FLAC) do seu computador.
             </p>
           </div>
 
@@ -605,7 +590,7 @@ export function SoundTimersDashboard({
                     type="button" 
                     className="icon-button"
                     title="Tocar Alerta"
-                    onClick={() => playSound(t.volume, t.soundDataUrl)}
+                    onClick={() => playSound(t.volume, t.soundFilePath)}
                     style={{ border: "1px solid #28343a", color: "#8fa1a8" }}
                   >
                     <Play size={14} />
@@ -627,11 +612,7 @@ export function SoundTimersDashboard({
                     type="button" 
                     className="icon-button btn--danger"
                     title="Excluir"
-                    onClick={() => {
-                      if (confirm(`Deseja mesmo excluir o timer "${t.name}"?`)) {
-                        deleteTimer(t.id);
-                      }
-                    }}
+                    onClick={() => setTimerToDelete(t)}
                     style={{ height: "38px", width: "38px" }}
                   >
                     <Trash2 size={14} />
@@ -642,6 +623,21 @@ export function SoundTimersDashboard({
           </div>
         )}
       </div>
+
+      <ConfirmModal
+        isOpen={timerToDelete !== null}
+        title="Excluir Timer"
+        message={`Deseja mesmo excluir o timer "${timerToDelete?.name}"?`}
+        onConfirm={() => {
+          if (timerToDelete) {
+            deleteTimer(timerToDelete.id);
+            setTimerToDelete(null);
+          }
+        }}
+        onCancel={() => setTimerToDelete(null)}
+        confirmText="Excluir"
+        cancelText="Cancelar"
+      />
     </div>
   );
 }

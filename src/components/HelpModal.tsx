@@ -1,4 +1,4 @@
-import { HelpCircle, X, Bot, Settings, Smile, Layers } from "lucide-react";
+import { HelpCircle, X, Bot, Settings, Smile, Layers, Users, Clock, UserCheck } from "lucide-react";
 import { useState } from "react";
 
 type HelpModalProps = {
@@ -6,7 +6,7 @@ type HelpModalProps = {
   onClose: () => void;
 };
 
-type TabId = "overview" | "supportBot" | "channelConfig" | "emotes";
+type TabId = "overview" | "supportBot" | "channelConfig" | "emotes" | "reciprocity" | "timers" | "account";
 
 export function HelpModal({ isOpen, onClose }: HelpModalProps) {
   const [activeTab, setActiveTab] = useState<TabId>("overview");
@@ -18,6 +18,9 @@ export function HelpModal({ isOpen, onClose }: HelpModalProps) {
     { id: "supportBot" as TabId, label: "Robô de Apoio", icon: <Bot size={16} /> },
     { id: "channelConfig" as TabId, label: "Configuração do Canal", icon: <Settings size={16} /> },
     { id: "emotes" as TabId, label: "Dicas & Emotes", icon: <Smile size={16} /> },
+    { id: "reciprocity" as TabId, label: "Reciprocidade", icon: <Users size={16} /> },
+    { id: "timers" as TabId, label: "Timers Sonoros", icon: <Clock size={16} /> },
+    { id: "account" as TabId, label: "Conta Kick", icon: <UserCheck size={16} /> },
   ];
 
   return (
@@ -139,6 +142,74 @@ export function HelpModal({ isOpen, onClose }: HelpModalProps) {
                   <p>
                     Escreva sua mensagem inteira em uma <strong>única linha</strong>. O parser de chat da Kick ignora a renderização de emotes se houver quebras de linha (botão Enter) no corpo da mensagem.
                   </p>
+                </div>
+              </div>
+            )}
+
+            {activeTab === "reciprocity" && (
+              <div className="help-modal__section">
+                <h3>Painel de Reciprocidade</h3>
+                <p>
+                  O painel de <strong>Reciprocidade</strong> permite monitorar e ranquear os espectadores que mais apoiam o seu canal assistindo às transmissões.
+                </p>
+                <div className="help-modal__card-info">
+                  <strong>🔑 Integração MissXSS:</strong>
+                  <ul>
+                    <li>Cadastre sua <strong>Chave API da MissXss</strong> nas configurações do painel para obter o watch time (tempo assistido) dos seus espectadores automaticamente.</li>
+                    <li><strong>Sincronização:</strong> O aplicativo atualiza os dados em segundo plano periodicamente de acordo com o intervalo definido nas configurações.</li>
+                  </ul>
+                </div>
+                <div className="help-modal__card-info warning">
+                  <strong>📊 Classificações e Status:</strong>
+                  <ul>
+                    <li><span className="status-indicator live" style={{ background: "#42c773", color: "#06250f" }}>Active</span> Espectador ativo que cumpre a meta mínima de watch time definida na semana.</li>
+                    <li><span className="status-indicator unknown" style={{ background: "#dcbf68", color: "#1f2112" }}>Dropping</span> Espectador cujo tempo assistido está abaixo da meta e está prestes a ficar inativo.</li>
+                    <li><strong>Ocultar do Ranking:</strong> Use o botão "Ocultar" para remover espectadores do ranking. Gerencie a lista de ocultados na aba "Gerenciar Ocultados".</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            {activeTab === "timers" && (
+              <div className="help-modal__section">
+                <h3>Timers Sonoros</h3>
+                <p>
+                  Crie lembretes sonoros personalizados com alertas no Windows para manter seus compromissos durante as lives.
+                </p>
+                <div className="help-modal__card-info">
+                  <strong>⏰ Modos de Disparo:</strong>
+                  <ul>
+                    <li><strong>Intervalo Fixo:</strong> Dispara repetidamente a cada X minutos (ex: beber água a cada 15 min).</li>
+                    <li><strong>Horário Específico:</strong> Alerta uma vez ao dia no horário exato configurado (HH:MM).</li>
+                    <li><strong>Hora Cheia (Hourly):</strong> Alerta no início de cada hora cheia.</li>
+                    <li><strong>Minuto da Hora:</strong> Dispara no minuto exato de cada hora (ex: no minuto 50 de todas as horas).</li>
+                  </ul>
+                </div>
+                <div className="help-modal__card-info">
+                  <strong>🎵 Som Personalizado Nativo:</strong>
+                  <ul>
+                    <li><strong>Anexar Som:</strong> Clique para selecionar um arquivo de som direto do seu computador (MP3, WAV, OGG, FLAC). O arquivo permanece no seu PC e o app o executa localmente.</li>
+                    <li><strong>Som Padrão:</strong> Se nenhum som for anexado, o Kickerino usará um chime eletrônico sintetizado.</li>
+                    <li><strong>Controle de Volume:</strong> Ajuste o volume de cada timer e teste o som a qualquer momento com o botão de Play ▶️.</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            {activeTab === "account" && (
+              <div className="help-modal__section">
+                <h3>Conexão da Conta Kick</h3>
+                <p>
+                  Para que o Robô de Apoio envie mensagens nos chats, é necessário conectar a sua conta da Kick.
+                </p>
+                <div className="help-modal__card-info">
+                  <strong>🔗 Gerenciamento de Sessão:</strong>
+                  <ul>
+                    <li>Clique no ícone de usuário no cabeçalho para gerenciar o login da Kick.</li>
+                    <li><strong>Abrir Janela do Kick:</strong> Abre um navegador embutido para fazer login de forma segura diretamente no site oficial da Kick.</li>
+                    <li><strong>Status do Login:</strong> O ícone verde ● indica que você está conectado e o robô está pronto. O ícone vermelho indica necessidade de login.</li>
+                    <li><strong>Deslogar:</strong> Limpa o cache de cookies da sessão no webview de maneira segura simulando o logout.</li>
+                  </ul>
                 </div>
               </div>
             )}

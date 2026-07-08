@@ -4,6 +4,7 @@ import type { RankingResult } from "../../types/reciprocity";
 import { BlockedUserManager } from "./BlockedUserManager";
 import { FriendDetails } from "./FriendDetails";
 import { ReciprocitySettingsPanel } from "./ReciprocitySettingsPanel";
+import { ConfirmModal } from "../ConfirmModal";
 import {
   Users,
   Activity,
@@ -45,6 +46,7 @@ export function ReciprocityDashboard() {
 
   const [activeScreen, setActiveScreen] = useState<"ranking" | "manage" | "settings">("ranking");
   const [selectedViewer, setSelectedViewer] = useState<{ username: string; platform: any } | null>(null);
+  const [userToHide, setUserToHide] = useState<RankingResult | null>(null);
 
   // Overview calculations
   const totalTracked = rankings.length;
@@ -340,9 +342,7 @@ export function ReciprocityDashboard() {
                         className="btn btn--danger btn--small"
                         onClick={(e) => {
                           e.stopPropagation(); // Prevent opening detail panel
-                          if (confirm(`Deseja ocultar ${result.displayName} do ranking de reciprocidade?`)) {
-                            blockUser(result.platform, result.username);
-                          }
+                          setUserToHide(result);
                         }}
                         style={{ padding: "0 8px", height: "28px" }}
                         title="Ocultar do ranking"
@@ -357,6 +357,21 @@ export function ReciprocityDashboard() {
           </table>
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={userToHide !== null}
+        title="Ocultar Usuário"
+        message={`Deseja ocultar ${userToHide?.displayName} do ranking de reciprocidade?`}
+        onConfirm={() => {
+          if (userToHide) {
+            blockUser(userToHide.platform, userToHide.username);
+            setUserToHide(null);
+          }
+        }}
+        onCancel={() => setUserToHide(null)}
+        confirmText="Ocultar"
+        cancelText="Cancelar"
+      />
     </div>
   );
 }

@@ -6,8 +6,8 @@ export interface SoundTimer {
   minuteOfHour?: number; // for "hourly_minute"
   specificTime?: string; // for "specific_time" (format "HH:MM")
   volume: number; // 0 to 100
-  soundDataUrl?: string; // base64 data URL
-  soundFileName?: string; // original uploaded file name
+  soundFilePath?: string; // local absolute file path on user's PC
+  soundFileName?: string; // original attached file name
   isEnabled: boolean;
   lastTriggeredAt?: number;
   createdAt: number;
