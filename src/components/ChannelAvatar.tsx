@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Radio } from "lucide-react";
 
 type ChannelAvatarProps = {
@@ -6,8 +7,22 @@ type ChannelAvatarProps = {
 };
 
 export function ChannelAvatar({ src, name }: ChannelAvatarProps) {
-  if (src) {
-    return <img className="channel-avatar" src={src} alt="" />;
+  const [hasError, setHasError] = useState(false);
+
+  // Reset error state when src changes
+  useEffect(() => {
+    setHasError(false);
+  }, [src]);
+
+  if (src && !hasError) {
+    return (
+      <img
+        className="channel-avatar"
+        src={src}
+        alt=""
+        onError={() => setHasError(true)}
+      />
+    );
   }
 
   return (
