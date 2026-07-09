@@ -133,7 +133,7 @@ fn app_version() -> String {
 async fn fetch_latest_release() -> Result<LatestReleasePayload, String> {
     let client = reqwest::Client::new();
     let response = client
-        .get("https://api.github.com/repos/athilalexandre/kickerino/releases/latest")
+        .get("https://api.github.com/repos/athilalexandre/kickerino/releases")
         .header(USER_AGENT, "Kickerino/0.1")
         .header(ACCEPT, "application/vnd.github+json")
         .send()
@@ -151,18 +151,22 @@ async fn fetch_latest_release() -> Result<LatestReleasePayload, String> {
         .json()
         .await
         .map_err(|error| format!("Resposta invalida do GitHub: {error}"))?;
+
+    let releases_arr = json.as_array().ok_or("Resposta do GitHub nao eh um array")?;
+    let release = releases_arr.get(0).ok_or("Nenhuma release encontrada no GitHub")?;
+
     let tag_name =
-        first_string(&json, &["tag_name"]).ok_or("Release sem tag_name no GitHub")?;
+        first_string(release, &["tag_name"]).ok_or("Release sem tag_name no GitHub")?;
     let html_url =
-        first_string(&json, &["html_url"]).ok_or("Release sem html_url no GitHub")?;
+        first_string(release, &["html_url"]).ok_or("Release sem html_url no GitHub")?;
     let latest_version = tag_name.trim_start_matches('v').to_string();
-    let installer_url = latest_installer_url(&json);
+    let installer_url = latest_installer_url(release);
 
     Ok(LatestReleasePayload {
         current_version: app_version(),
         latest_version,
         tag_name,
-        name: first_string(&json, &["name"]),
+        name: first_string(release, &["name"]),
         html_url,
         installer_url,
     })
@@ -918,6 +922,13 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
+        .setup(|app| {
+            if let Some(window) = app.get_webview_window("main") {
+                let version = env!("CARGO_PKG_VERSION");
+                let _ = window.set_title(&format!("Kickerino v{}", version));
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             app_version,
             fetch_kick_channel,
