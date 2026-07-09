@@ -1,43 +1,15 @@
 export type Platform = "Kick" | "Twitch" | "YouTube" | "TikTok";
 
-export interface ViewerStats {
-  userId?: string;
+export interface ChannelReciprocity {
   username: string;
   displayName: string;
-  platform: Platform;
-  watchTimeMinutes: number;
-  messageCount: number;
-}
-
-export interface WeekViewerPoints {
-  username: string;
-  displayName: string;
-  platform: Platform;
-  points: number;
-  watchTimeMinutes: number;
-  messageCount: number;
-}
-
-export interface ClosedWeekRecord {
-  weekMonday: string; // YYYY-MM-DD
-  viewerPoints: {
-    [userKey: string]: WeekViewerPoints; // userKey is "platform:username"
-  };
+  avatarUrl?: string;
+  chatted: boolean;      // has sent at least one message in chat (message_count > 0)
+  following: boolean;    // follows the streamer
+  subscriber: boolean;   // subbed to the streamer
+  lastChecked?: number;
 }
 
 export interface ReciprocitySettings {
   pollingIntervalMinutes: number;
-  minutesPerPoint: number; // e.g. 60 (1 hour = 1 point)
-}
-
-export interface RankingResult {
-  username: string;
-  displayName: string;
-  platform: Platform;
-  watchTimeMinutes: number;
-  messageCount: number;
-  points: number;
-  rank: number;
-  status: "Active" | "Dropping" | "Inactive" | "New";
-  trendDirection: "up" | "down" | "stable";
 }

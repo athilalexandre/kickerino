@@ -23,7 +23,6 @@ export function ReciprocitySettingsPanel({
   onDeleteApiKey,
 }: ReciprocitySettingsPanelProps) {
   const [pollingInterval, setPollingInterval] = useState(settings.pollingIntervalMinutes);
-  const [minutesPerPoint, setMinutesPerPoint] = useState(settings.minutesPerPoint);
 
   // API Key States
   const [apiKeyInput, setApiKeyInput] = useState("");
@@ -37,14 +36,12 @@ export function ReciprocitySettingsPanel({
     e.preventDefault();
     onSave({
       pollingIntervalMinutes: Math.max(5, pollingInterval), // Minimum 5 mins
-      minutesPerPoint: Math.max(1, minutesPerPoint), // Minimum 1 minute
     });
     onClose();
   };
 
   const handleReset = () => {
     setPollingInterval(defaultReciprocitySettings.pollingIntervalMinutes);
-    setMinutesPerPoint(defaultReciprocitySettings.minutesPerPoint);
   };
 
   const handleSaveApiKey = async (e: React.MouseEvent) => {
@@ -77,7 +74,7 @@ export function ReciprocitySettingsPanel({
     <div className="reciprocity-settings-card">
       <div className="reciprocity-settings-card__header">
         <h3>Configurações de Reciprocidade</h3>
-        <p>Ajuste as chaves de acesso, os critérios de pontuação e o tempo de atualização.</p>
+        <p>Ajuste as chaves de acesso e o tempo de atualização.</p>
       </div>
 
       {/* API Key Management Section */}
@@ -191,18 +188,6 @@ export function ReciprocitySettingsPanel({
               onChange={(e) => setPollingInterval(parseInt(e.target.value) || 60)}
             />
             <span className="help-text">Frequência com que o app consulta a MissXss API.</span>
-          </div>
-
-          <div className="form-group">
-            <label htmlFor="minutesPerPoint">Minutos para 1 Ponto de Reciprocidade</label>
-            <input
-              id="minutesPerPoint"
-              type="number"
-              min="1"
-              value={minutesPerPoint}
-              onChange={(e) => setMinutesPerPoint(parseInt(e.target.value) || 60)}
-            />
-            <span className="help-text">Por exemplo, 60 minutos (1 hora) assistidos geram 1 ponto na semana.</span>
           </div>
         </div>
 

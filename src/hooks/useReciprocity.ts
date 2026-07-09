@@ -1,56 +1,25 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { ViewerStats, ClosedWeekRecord, ReciprocitySettings, RankingResult } from "../types/reciprocity";
+import type { ChannelReciprocity, ReciprocitySettings } from "../types/reciprocity";
+import type { KickChannel } from "../types/channel";
 import {
-  loadBlockedUsers,
-  saveBlockedUsers,
-  loadClosedWeeks,
-  saveClosedWeeks,
-  loadCurrentWeekMonday,
-  saveCurrentWeekMonday,
-  loadCurrentWeekData,
-  saveCurrentWeekData,
   loadReciprocitySettings,
   saveReciprocitySettings,
-  loadPreviousRanks,
-  savePreviousRanks,
-  getCurrentWeekMonday,
-  getLocalDateString,
-  getWeekDateRange,
-  calculateRankings,
+  loadReciprocityData,
+  saveReciprocityData,
 } from "../services/reciprocityStorage";
 
-function extractArray(response: any): any[] {
-  if (Array.isArray(response)) {
-    return response;
-  }
-  if (response && typeof response === "object") {
-    if (Array.isArray(response.data)) {
-      return response.data;
-    }
-    if (Array.isArray(response.list)) {
-      return response.list;
-    }
-    if (Array.isArray(response.users)) {
-      return response.users;
-    }
-    if (Array.isArray(response.results)) {
-      return response.results;
-    }
-  }
-  return [];
+interface UseReciprocityParams {
+  channels: KickChannel[];
+  kickUsername: string | null;
+  kickLoginStatus: string;
 }
 
-export function useReciprocity() {
-  const [blockedUsers, setBlockedUsers] = useState<string[]>([]);
-  const [closedWeeks, setClosedWeeks] = useState<ClosedWeekRecord[]>([]);
-  const [currentWeekMondayStr, setCurrentWeekMondayStr] = useState<string>("");
-  const [currentWeekData, setCurrentWeekData] = useState<ViewerStats[]>([]);
+export function useReciprocity({ channels, kickUsername, kickLoginStatus }: UseReciprocityParams) {
+  const [reciprocityData, setReciprocityData] = useState<ChannelReciprocity[]>([]);
   const [settings, setSettings] = useState<ReciprocitySettings>(loadReciprocitySettings());
-  
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
-  const [selectedMode, setSelectedMode] = useState<"week" | "eternal" | string>("week"); // "week", "eternal", or YYYY-MM-DD
   const [hasApiKey, setHasApiKey] = useState(false);
 
   // Check if API key is configured
@@ -64,64 +33,31 @@ export function useReciprocity() {
     }
   }, []);
 
-  // Load data on mount
+  // Load and align with channels list on mount & when channels changes
   useEffect(() => {
-    setBlockedUsers(loadBlockedUsers());
-    setClosedWeeks(loadClosedWeeks());
-    setCurrentWeekData(loadCurrentWeekData());
-    
-    const storedSettings = loadReciprocitySettings();
-    setSettings(storedSettings);
-
-    const realMonday = getCurrentWeekMonday();
-    const realMondayStr = getLocalDateString(realMonday);
-    
-    const storedMonday = loadCurrentWeekMonday();
-    if (storedMonday) {
-      setCurrentWeekMondayStr(storedMonday);
-    } else {
-      setCurrentWeekMondayStr(realMondayStr);
-      saveCurrentWeekMonday(realMondayStr);
-    }
-
+    const stored = loadReciprocityData();
+    const aligned = channels.map((c) => {
+      const existing = stored.find((s) => s.username.toLowerCase() === c.slug.toLowerCase());
+      if (existing) {
+        return {
+          ...existing,
+          displayName: c.username || c.slug,
+          avatarUrl: c.avatarUrl,
+        };
+      }
+      return {
+        username: c.slug,
+        displayName: c.username || c.slug,
+        avatarUrl: c.avatarUrl,
+        chatted: false,
+        following: false,
+        subscriber: false,
+      };
+    });
+    setReciprocityData(aligned);
+    saveReciprocityData(aligned);
     void checkApiKeyStatus();
-  }, [checkApiKeyStatus]);
-
-  // Memoize previousRanks
-  const previousRanks = useMemo(() => loadPreviousRanks(), []);
-  
-  // Memoize rankings
-  const rankings = useMemo(() => {
-    return calculateRankings(
-      currentWeekData,
-      closedWeeks,
-      blockedUsers,
-      selectedMode,
-      settings,
-      previousRanks
-    );
-  }, [currentWeekData, closedWeeks, blockedUsers, selectedMode, settings, previousRanks]);
-
-  // Keep a ref of rankings so syncWatchTime can read it without depending on it
-  const rankingsRef = useRef(rankings);
-  useEffect(() => {
-    rankingsRef.current = rankings;
-  }, [rankings]);
-
-  const blockUser = (platform: string, username: string) => {
-    const key = `${platform.toLowerCase()}:${username.toLowerCase()}`;
-    if (!blockedUsers.includes(key)) {
-      const updated = [...blockedUsers, key];
-      setBlockedUsers(updated);
-      saveBlockedUsers(updated);
-    }
-  };
-
-  const unblockUser = (key: string) => {
-    const updated = blockedUsers.filter((u) => u.toLowerCase() !== key.toLowerCase());
-    setBlockedUsers(updated);
-    saveBlockedUsers(updated);
-  };
+  }, [channels, checkApiKeyStatus]);
 
   const updateSettings = (newSettings: ReciprocitySettings) => {
     setSettings(newSettings);
@@ -147,168 +83,155 @@ export function useReciprocity() {
     }
   };
 
-  const syncWatchTime = useCallback(async () => {
+  const syncOne = useCallback(async (slug: string) => {
+    if (!kickUsername || kickLoginStatus !== "connected") {
+      setSyncError("É necessário estar conectado à sua conta da Kick para verificar.");
+      return;
+    }
+    setSyncError(null);
+
+    const target = channels.find((c) => c.slug.toLowerCase() === slug.toLowerCase());
+    if (!target) return;
+
+    // 1. Fetch chatted (messageCount) from MissXss
+    let chatted = false;
+    try {
+      const missxssRes = await invoke<any>("fetch_missxss_watch_time", {
+        platform: "Kick",
+        username: target.slug,
+      });
+      if (missxssRes) {
+        const msgCount = Number(missxssRes.message_count ?? missxssRes.messageCount ?? missxssRes.messages ?? 0);
+        chatted = msgCount > 0;
+      }
+    } catch (e) {
+      console.warn(`[Reciprocity] Erro ao buscar dados na MissXss para ${slug}:`, e);
+    }
+
+    // 2. Fetch following/subscriber from Kick internal API
+    let following = false;
+    let subscriber = false;
+    try {
+      const kickRelations = await invoke<any[]>("check_kick_relationships", {
+        ourChannel: kickUsername,
+        theirChannels: [target.slug],
+      });
+      if (kickRelations && kickRelations.length > 0) {
+        following = kickRelations[0].following;
+        subscriber = kickRelations[0].subscriber;
+      }
+    } catch (e) {
+      console.warn(`[Reciprocity] Erro ao buscar relacionamentos na Kick para ${slug}:`, e);
+    }
+
+    setReciprocityData((prev) => {
+      const updated = prev.map((item) => {
+        if (item.username.toLowerCase() === slug.toLowerCase()) {
+          return {
+            ...item,
+            chatted,
+            following,
+            subscriber,
+            lastChecked: Date.now(),
+          };
+        }
+        return item;
+      });
+      saveReciprocityData(updated);
+      return updated;
+    });
+  }, [channels, kickUsername, kickLoginStatus]);
+
+  const syncAll = useCallback(async () => {
+    if (!kickUsername || kickLoginStatus !== "connected") {
+      setSyncError("É necessário estar conectado à sua conta da Kick para verificar.");
+      return;
+    }
     setIsSyncing(true);
     setSyncError(null);
 
     try {
-      const isKeySet = await invoke<boolean>("has_missxss_api_key");
-      if (!isKeySet) {
-        setSyncError("Chave API MissXss não configurada. Defina nas Configurações.");
+      const slugs = channels.map((c) => c.slug);
+      if (slugs.length === 0) {
         setIsSyncing(false);
         return;
       }
 
-      const realMonday = getCurrentWeekMonday();
-      const realMondayStr = getLocalDateString(realMonday);
-      
-      let storedMondayStr = loadCurrentWeekMonday();
-      if (!storedMondayStr) {
-        storedMondayStr = realMondayStr;
-        saveCurrentWeekMonday(realMondayStr);
-        setCurrentWeekMondayStr(realMondayStr);
-      }
-
-      // --- 1. Catchup Closed Weeks if Monday shifted ---
-      if (storedMondayStr !== realMondayStr) {
-        console.log(`[Reciprocity] Nova semana detectada. Fechando semana anterior: ${storedMondayStr}`);
-        
-        let loopMonday = new Date(storedMondayStr + "T00:00:00");
-        const closedWeeksList = loadClosedWeeks();
-
-        // Process all weeks that have passed since the app last ran
-        while (getLocalDateString(loopMonday) !== realMondayStr) {
-          const weekMondayStr = getLocalDateString(loopMonday);
-          const range = getWeekDateRange(loopMonday);
-          
-          console.log(`[Reciprocity] Fechando dados para a semana: ${weekMondayStr} (${range.start} a ${range.end})`);
-          
+      // 1. Fetch chat statuses from MissXss
+      const chattedMap: Record<string, boolean> = {};
+      await Promise.all(
+        channels.map(async (c) => {
           try {
-            // Fetch final top list for that specific historical week
-            const response: any = await invoke("fetch_missxss_top_watch_time", {
-              limit: 100,
+            const missxssRes = await invoke<any>("fetch_missxss_watch_time", {
               platform: "Kick",
-              dateFrom: range.start,
-              dateTo: range.end,
+              username: c.slug,
             });
-
-            const rawList = extractArray(response);
-            const viewerPoints: { [key: string]: any } = {};
-
-            for (const v of rawList) {
-              const watchTime = Number(v.watch_time ?? v.watchTime ?? 0);
-              const messageCount = Number(v.message_count ?? v.messageCount ?? 0);
-              const points = Math.floor(watchTime / settings.minutesPerPoint);
-              
-              if (points > 0) {
-                const username = v.username || "";
-                const platform = v.platform || "Kick";
-                const userKey = `${platform.toLowerCase()}:${username.toLowerCase()}`;
-                
-                viewerPoints[userKey] = {
-                  username,
-                  displayName: v.displayname || v.displayName || username,
-                  platform,
-                  points,
-                  watchTimeMinutes: watchTime,
-                  messageCount,
-                };
-              }
+            if (missxssRes) {
+              const msgCount = Number(missxssRes.message_count ?? missxssRes.messageCount ?? missxssRes.messages ?? 0);
+              chattedMap[c.slug.toLowerCase()] = msgCount > 0;
             }
-
-            // Save closed week
-            if (Object.keys(viewerPoints).length > 0) {
-              closedWeeksList.push({
-                weekMonday: weekMondayStr,
-                viewerPoints,
-              });
-            }
-          } catch (err) {
-            console.error(`[Reciprocity] Falha ao fechar histórico para a semana ${weekMondayStr}:`, err);
+          } catch (e) {
+            console.warn(`[Reciprocity] Erro MissXss para ${c.slug}:`, e);
           }
+        })
+      );
 
-          // Advance loopMonday by 7 days
-          loopMonday.setDate(loopMonday.getDate() + 7);
+      // 2. Fetch relationship statuses from Kick
+      const relationMap: Record<string, { following: boolean; subscriber: boolean }> = {};
+      try {
+        const kickRelations = await invoke<any[]>("check_kick_relationships", {
+          ourChannel: kickUsername,
+          theirChannels: slugs,
+        });
+        if (kickRelations) {
+          for (const rel of kickRelations) {
+            relationMap[rel.username.toLowerCase()] = {
+              following: rel.following,
+              subscriber: rel.subscriber,
+            };
+          }
         }
-
-        saveClosedWeeks(closedWeeksList);
-        setClosedWeeks(closedWeeksList);
-
-        // Update Monday baseline
-        saveCurrentWeekMonday(realMondayStr);
-        setCurrentWeekMondayStr(realMondayStr);
+      } catch (e) {
+        console.error("[Reciprocity] Erro ao buscar relacionamentos na Kick:", e);
+        setSyncError(String(e) || "Erro ao conectar com a Kick.");
       }
 
-      // --- 2. Fetch Current Week Leaderboard ---
-      const todayStr = getLocalDateString(new Date());
-      const range = getWeekDateRange(realMonday);
-
-      console.log(`[Reciprocity] Sincronizando semana atual: ${realMondayStr} (${range.start} a ${todayStr})`);
-
-      const response: any = await invoke("fetch_missxss_top_watch_time", {
-        limit: 100,
-        platform: "Kick",
-        dateFrom: range.start,
-        dateTo: todayStr, // Fetch up to today
+      // 3. Merge and update
+      setReciprocityData((prev) => {
+        const updated = prev.map((item) => {
+          const lowerUser = item.username.toLowerCase();
+          const chatted = chattedMap[lowerUser] ?? item.chatted;
+          const rel = relationMap[lowerUser];
+          return {
+            ...item,
+            chatted,
+            following: rel ? rel.following : item.following,
+            subscriber: rel ? rel.subscriber : item.subscriber,
+            lastChecked: Date.now(),
+          };
+        });
+        saveReciprocityData(updated);
+        return updated;
       });
-
-      const rawList = extractArray(response);
-      const currentData: ViewerStats[] = rawList.map((v: any) => ({
-        username: v.username || "",
-        displayName: v.displayname || v.displayName || v.username || "",
-        platform: v.platform || "Kick",
-        watchTimeMinutes: Number(v.watch_time ?? v.watchTime ?? 0),
-        messageCount: Number(v.message_count ?? v.messageCount ?? 0),
-      }));
-
-      // Cache ranks before saving new stats to determine trends on the next tick
-      const currentRanks: { [key: string]: number } = {};
-      rankingsRef.current.forEach((r: RankingResult) => {
-        const key = `${r.platform.toLowerCase()}:${r.username.toLowerCase()}`;
-        currentRanks[key] = r.rank;
-      });
-      savePreviousRanks(currentRanks);
-
-      setCurrentWeekData(currentData);
-      saveCurrentWeekData(currentData);
-      setSyncError(null);
     } catch (err: any) {
       console.error("[Reciprocity] Erro durante o sincronismo:", err);
-      setSyncError(String(err) || "Falha na sincronização com MissXss API.");
+      setSyncError(String(err) || "Falha na sincronização.");
     } finally {
       setIsSyncing(false);
-      void checkApiKeyStatus();
     }
-  }, [settings.minutesPerPoint, checkApiKeyStatus]);
-
-  // Setup auto polling interval
-  useEffect(() => {
-    const intervalMs = settings.pollingIntervalMinutes * 60 * 1000;
-    const timer = setInterval(() => {
-      void syncWatchTime();
-    }, intervalMs);
-
-    return () => clearInterval(timer);
-  }, [settings.pollingIntervalMinutes, syncWatchTime]);
+  }, [channels, kickUsername, kickLoginStatus]);
 
   return {
-    blockedUsers,
-    closedWeeks,
-    currentWeekMondayStr,
-    currentWeekData,
+    reciprocityData,
     settings,
-    rankings,
     isSyncing,
     syncError,
-    selectedMode,
-    setSelectedMode,
-    blockUser,
-    unblockUser,
-    updateSettings,
-    syncWatchTime,
+    syncOne,
+    syncAll,
     hasApiKey,
     saveApiKey,
     deleteApiKey,
     checkApiKeyStatus,
+    updateSettings,
   };
 }

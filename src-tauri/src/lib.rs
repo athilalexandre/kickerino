@@ -859,6 +859,100 @@ async fn fetch_missxss_top_watch_time(
     Ok(json)
 }
 
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+struct KickRelation {
+    username: String,
+    following: bool,
+    subscriber: bool,
+}
+
+#[tauri::command]
+async fn check_kick_relationships(
+    app: AppHandle,
+    our_channel: String,
+    their_channels: Vec<String>,
+) -> Result<Vec<KickRelation>, String> {
+    let label = "relationship-checker";
+
+    // Close window if already exists
+    if let Some(w) = app.get_webview_window(label) {
+        let _ = w.close();
+        for _ in 0..10 {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            if app.get_webview_window(label).is_none() {
+                break;
+            }
+        }
+    }
+
+    let url_str = format!("https://kick.com/popout/{}/chat", our_channel);
+    let parsed_url = url_str.parse::<tauri::Url>().map_err(|e| e.to_string())?;
+
+    let js_script = format!(
+        r#"
+        (async function() {{
+            const ourChannel = "{}";
+            const usernames = {};
+            const results = [];
+            for (const username of usernames) {{
+                let following = false;
+                let subscriber = false;
+                try {{
+                    const res = await fetch(`https://kick.com/api/v2/channels/${{ourChannel}}/users/${{username}}`);
+                    if (res.ok) {{
+                        const data = await res.json();
+                        following = data.following === true || (data.relation && data.relation.following === true);
+                        subscriber = (data.subscriber && data.subscriber.active === true) || (data.relation && data.relation.subscriber === true);
+                    }}
+                }} catch(e) {{
+                    console.error("Error checking relationship for " + username, e);
+                }}
+                results.push({{ username, following, subscriber }});
+            }}
+            window.location.hash = "relation_done:" + JSON.stringify(results);
+        }})();
+        "#,
+        our_channel,
+        serde_json::to_string(&their_channels).unwrap()
+    );
+
+    let builder = WebviewWindowBuilder::new(
+        &app,
+        label,
+        WebviewUrl::External(parsed_url)
+    )
+    .title("Relationship Checker")
+    .inner_size(300.0, 300.0)
+    .visible(false)
+    .skip_taskbar(true)
+    .initialization_script(&js_script);
+
+    let window = builder.build().map_err(|e| e.to_string())?;
+
+    let mut results: Option<Vec<KickRelation>> = None;
+
+    for _ in 0..40 { // 20 seconds timeout
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        if app.get_webview_window(label).is_none() {
+            break;
+        }
+        if let Ok(url) = window.url() {
+            let fragment = url.fragment().unwrap_or("");
+            if fragment.starts_with("relation_done:") {
+                let json_str = &fragment["relation_done:".len()..];
+                if let Ok(parsed) = serde_json::from_str::<Vec<KickRelation>>(json_str) {
+                    results = Some(parsed);
+                }
+                break;
+            }
+        }
+    }
+
+    let _ = window.close();
+
+    results.ok_or_else(|| "Tempo limite esgotado ao verificar relacionamentos na Kick.".to_string())
+}
+
 #[tauri::command]
 async fn install_update(app: AppHandle, url: String) -> Result<(), String> {
     let client = reqwest::Client::new();
@@ -943,6 +1037,7 @@ pub fn run() {
             fetch_channels_emotes,
             fetch_missxss_watch_time,
             fetch_missxss_top_watch_time,
+            check_kick_relationships,
             has_missxss_api_key,
             save_missxss_api_key,
             delete_missxss_api_key,

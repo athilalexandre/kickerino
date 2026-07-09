@@ -2019,7 +2019,7 @@ dependencies = [
 
 [[package]]
 name = "kickerino"
-version = "0.9.9-7"
+version = "0.9.9-10"
 dependencies = [
  "reqwest 0.12.28",
  "rfd",

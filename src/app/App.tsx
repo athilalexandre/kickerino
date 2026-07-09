@@ -429,7 +429,11 @@ export function App() {
           </>
         ) : currentTab === "reciprocity" ? (
           <section className="content" style={{ padding: "18px 24px" }}>
-            <ReciprocityDashboard />
+            <ReciprocityDashboard
+              channels={channels}
+              kickUsername={kickUsername}
+              kickLoginStatus={kickLoginStatus}
+            />
           </section>
         ) : (
           <section className="content" style={{ padding: "18px 24px" }}>

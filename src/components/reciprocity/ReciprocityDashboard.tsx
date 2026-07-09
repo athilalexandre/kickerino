@@ -1,87 +1,54 @@
 import { useState } from "react";
 import { useReciprocity } from "../../hooks/useReciprocity";
-import type { RankingResult } from "../../types/reciprocity";
-import { BlockedUserManager } from "./BlockedUserManager";
-import { FriendDetails } from "./FriendDetails";
 import { ReciprocitySettingsPanel } from "./ReciprocitySettingsPanel";
-import { ConfirmModal } from "../ConfirmModal";
+import type { KickChannel } from "../../types/channel";
 import {
-  Users,
-  Activity,
-  AlertTriangle,
-  RefreshCw,
   Sliders,
-  ArrowUp,
-  ArrowDown,
-  Minus,
-  Sparkles,
+  RefreshCw,
   Info,
-  ChevronRight,
-  TrendingDown,
+  CheckCircle2,
+  XCircle,
+  HelpCircle,
+  Users,
   UserCheck,
-  EyeOff,
-  Calendar,
+  UserX,
+  ExternalLink,
 } from "lucide-react";
 
-export function ReciprocityDashboard() {
+interface ReciprocityDashboardProps {
+  channels: KickChannel[];
+  kickUsername: string | null;
+  kickLoginStatus: "checking" | "connected" | "disconnected";
+}
+
+export function ReciprocityDashboard({
+  channels,
+  kickUsername,
+  kickLoginStatus,
+}: ReciprocityDashboardProps) {
   const {
-    blockedUsers,
-    closedWeeks,
-    currentWeekMondayStr,
-    currentWeekData,
+    reciprocityData,
     settings,
-    rankings,
     isSyncing,
     syncError,
-    selectedMode,
-    setSelectedMode,
-    blockUser,
-    unblockUser,
-    updateSettings,
-    syncWatchTime,
+    syncOne,
+    syncAll,
     hasApiKey,
     saveApiKey,
     deleteApiKey,
-  } = useReciprocity();
+    updateSettings,
+  } = useReciprocity({ channels, kickUsername, kickLoginStatus });
 
-  const [activeScreen, setActiveScreen] = useState<"ranking" | "manage" | "settings">("ranking");
-  const [selectedViewer, setSelectedViewer] = useState<{ username: string; platform: any } | null>(null);
-  const [userToHide, setUserToHide] = useState<RankingResult | null>(null);
+  const [activeScreen, setActiveScreen] = useState<"ranking" | "settings">("ranking");
 
-  // Overview calculations
-  const totalTracked = rankings.length;
-  const activeCount = rankings.filter((r: RankingResult) => r.status === "Active").length;
-  const droppingCount = rankings.filter((r: RankingResult) => r.status === "Dropping").length;
-  const blockedCount = blockedUsers.length;
+  // Summary Metrics
+  const totalMonitored = reciprocityData.length;
+  
+  const reciprocalCount = reciprocityData.filter(
+    (item) => item.chatted && (item.following || item.subscriber)
+  ).length;
 
-  const handleOpenDetails = (username: string, platform: any) => {
-    setSelectedViewer({ username, platform });
-  };
-
-  // If viewing details of a viewer, render it
-  if (selectedViewer) {
-    return (
-      <FriendDetails
-        username={selectedViewer.username}
-        platform={selectedViewer.platform}
-        closedWeeks={closedWeeks}
-        currentWeekData={currentWeekData}
-        rankings={rankings}
-        settings={settings}
-        onClose={() => setSelectedViewer(null)}
-      />
-    );
-  }
-
-  if (activeScreen === "manage") {
-    return (
-      <BlockedUserManager
-        blockedUsers={blockedUsers}
-        onUnblock={unblockUser}
-        onClose={() => setActiveScreen("ranking")}
-      />
-    );
-  }
+  const nonReciprocalCount = totalMonitored - reciprocalCount;
 
   if (activeScreen === "settings") {
     return (
@@ -98,11 +65,13 @@ export function ReciprocityDashboard() {
 
   return (
     <div className="reciprocity-dashboard">
-      {/* Top action bar */}
+      {/* Header section */}
       <div className="reciprocity-dashboard__header">
         <div>
-          <h2>Painel de Reciprocidade</h2>
-          <p>Monitore quem está apoiando e interagindo na sua live através da MissXss.</p>
+          <h2>Reciprocidade de Canais</h2>
+          <p>
+            Verifique se os canais que você apoia também apoiam você de volta.
+          </p>
         </div>
 
         <div className="header-actions">
@@ -110,7 +79,7 @@ export function ReciprocityDashboard() {
             type="button"
             className="btn btn--secondary"
             onClick={() => setActiveScreen("settings")}
-            title="Configurar critérios de pontuação"
+            title="Configurações e Chave API"
           >
             <Sliders size={16} />
             <span>Configurações</span>
@@ -118,49 +87,58 @@ export function ReciprocityDashboard() {
 
           <button
             type="button"
-            className="btn btn--secondary"
-            onClick={() => setActiveScreen("manage")}
-            title="Ver canais ocultados"
-          >
-            <EyeOff size={16} />
-            <span>Ocultados ({blockedCount})</span>
-          </button>
-
-          <button
-            type="button"
             className="btn btn--success"
-            disabled={isSyncing}
-            onClick={() => void syncWatchTime()}
+            disabled={isSyncing || kickLoginStatus !== "connected" || !hasApiKey}
+            onClick={() => void syncAll()}
           >
             <RefreshCw size={16} className={isSyncing ? "spin" : ""} />
-            <span>{isSyncing ? "Sincronizando..." : "Sincronizar"}</span>
+            <span>{isSyncing ? "Verificando..." : "Verificar Todos"}</span>
           </button>
         </div>
       </div>
 
-      {/* Sync Error Banner */}
-      {syncError && (
-        <div className="reciprocity-error-banner">
-          <AlertTriangle size={20} className="icon" />
+      {/* Login / API key warning or sync error */}
+      {kickLoginStatus !== "connected" && (
+        <div className="reciprocity-error-banner" style={{ borderLeftColor: "#dc5d57", background: "rgba(220, 93, 87, 0.1)" }}>
+          <Info size={20} className="icon" style={{ color: "#dc5d57" }} />
           <div>
-            <strong>Erro de Sincronização:</strong>
-            <p>{syncError}</p>
-            <span className="helper">
-              Certifique-se de configurar a sua Chave API da MissXss no botão <strong>Configurações</strong> acima ou declare-a como variável de ambiente no seu sistema.
-            </span>
+            <strong>Login da Kick Pendente:</strong>
+            <p>Você precisa estar conectado na sua conta da Kick para verificar se os canais te seguem ou são subs.</p>
+            <span className="helper">Clique no ícone de perfil no cabeçalho para fazer login na Kick.</span>
           </div>
         </div>
       )}
 
-      {/* Summary Cards */}
+      {!hasApiKey && kickLoginStatus === "connected" && (
+        <div className="reciprocity-error-banner" style={{ borderLeftColor: "#f0ad4e", background: "rgba(240, 173, 78, 0.1)" }}>
+          <HelpCircle size={20} className="icon" style={{ color: "#f0ad4e" }} />
+          <div>
+            <strong>Chave API da MissXss Ausente:</strong>
+            <p>A chave API é necessária para conferir se os canais já mandaram mensagem no seu chat.</p>
+            <span className="helper">Vá em Configurações para salvar sua chave.</span>
+          </div>
+        </div>
+      )}
+
+      {syncError && (
+        <div className="reciprocity-error-banner">
+          <XCircle size={20} className="icon" />
+          <div>
+            <strong>Erro de Sincronização:</strong>
+            <p>{syncError}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Summary Stats Grid */}
       <div className="reciprocity-summary-grid">
         <div className="summary-card">
           <div className="summary-card__icon summary-card__icon--blue">
             <Users size={22} />
           </div>
           <div className="summary-card__data">
-            <span>Total Espectadores</span>
-            <h3>{totalTracked}</h3>
+            <span>Canais Monitorados</span>
+            <h3>{totalMonitored}</h3>
           </div>
         </div>
 
@@ -169,185 +147,186 @@ export function ReciprocityDashboard() {
             <UserCheck size={22} />
           </div>
           <div className="summary-card__data">
-            <span>Ativos (Esta Semana)</span>
-            <h3>{activeCount}</h3>
+            <span>Recíprocos</span>
+            <h3>{reciprocalCount}</h3>
           </div>
         </div>
 
         <div className="summary-card">
           <div className="summary-card__icon summary-card__icon--warning">
-            <TrendingDown size={22} />
+            <UserX size={22} />
           </div>
           <div className="summary-card__data">
-            <span>Caindo (Esta Semana)</span>
-            <h3>{droppingCount}</h3>
-          </div>
-        </div>
-
-        <div className="summary-card">
-          <div className="summary-card__icon summary-card__icon--danger">
-            <Activity size={22} />
-          </div>
-          <div className="summary-card__data">
-            <span>Ocultados</span>
-            <h3>{blockedCount}</h3>
+            <span>Pendentes / Não Recíprocos</span>
+            <h3>{nonReciprocalCount}</h3>
           </div>
         </div>
       </div>
 
-      {/* Filtering and Information Bar */}
-      <div className="reciprocity-filter-bar">
-        <div className="window-filters" style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-          <button
-            type="button"
-            className={`filter-tab ${selectedMode === "week" ? "filter-tab--active" : ""}`}
-            onClick={() => setSelectedMode("week")}
-          >
-            Esta Semana (Rank da Semana)
-          </button>
-          <button
-            type="button"
-            className={`filter-tab ${selectedMode === "eternal" ? "filter-tab--active" : ""}`}
-            onClick={() => setSelectedMode("eternal")}
-          >
-            Ranking Eterno (Acumulado)
-          </button>
-
-          {closedWeeks.length > 0 && (
-            <div style={{ display: "flex", alignItems: "center", gap: "6px", marginLeft: "10px" }}>
-              <Calendar size={14} style={{ color: "#8fa1a8" }} />
-              <select
-                value={selectedMode}
-                onChange={(e) => setSelectedMode(e.target.value)}
-                style={{
-                  height: "30px",
-                  background: "#151b1f",
-                  border: "1px solid #2a3338",
-                  borderRadius: "6px",
-                  color: "#edf4f6",
-                  fontSize: "12px",
-                  padding: "0 6px",
-                  outline: "none"
-                }}
-              >
-                <option value="week" disabled>Semanas Fechadas...</option>
-                {closedWeeks.map((cw) => (
-                  <option key={cw.weekMonday} value={cw.weekMonday}>
-                    Semana de {cw.weekMonday}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-        </div>
-
-        <div className="info-badge">
-          <Info size={14} />
-          <span>Fórmula: {settings.minutesPerPoint} min = 1 ponto semanal</span>
-        </div>
-      </div>
-
-      {/* Ranking Table */}
-      {totalTracked === 0 ? (
-        <div className="empty-state">
-          <Sparkles size={40} style={{ color: "#75e39b" }} />
-          <strong>Nenhum espectador encontrado</strong>
+      {/* Info Badge */}
+      <div className="reciprocity-filter-bar" style={{ padding: "12px 16px" }}>
+        <div className="info-badge" style={{ display: "flex", alignItems: "center", gap: "8px", background: "transparent", border: "none", color: "#8fa1a8", fontSize: "13px" }}>
+          <Info size={16} style={{ color: "#75e39b", flexShrink: 0 }} />
           <span>
-            {hasApiKey ? "Clique em Sincronizar para buscar a lista de espectadores mais recentes no MissXss." : "Configure sua chave API nas Configurações para carregar os dados de watch time."}
+            <strong>Critério de Reciprocidade:</strong> O canal de apoio deve ter enviado pelo menos 1 mensagem no seu chat <strong>E</strong> ser seguidor ou sub do seu canal.
           </span>
-          {!hasApiKey && (
-            <button
-              type="button"
-              className="btn btn--primary"
-              style={{ marginTop: "10px" }}
-              onClick={() => setActiveScreen("settings")}
-            >
-              Configurar Chave API
-            </button>
-          )}
+        </div>
+      </div>
+
+      {/* Table Section */}
+      {totalMonitored === 0 ? (
+        <div className="empty-state">
+          <UserX size={40} style={{ color: "#8fa1a8" }} />
+          <strong>Nenhum canal no Apoio de Canais</strong>
+          <span>
+            Adicione canais na aba "Apoio de Canais" para que eles apareçam aqui para monitoramento.
+          </span>
         </div>
       ) : (
         <div className="table-responsive">
           <table className="reciprocity-table">
             <thead>
               <tr>
-                <th style={{ width: "60px" }}>Pos.</th>
-                <th>Nome / Espectador</th>
-                <th style={{ width: "120px" }}>Plataforma</th>
-                <th style={{ width: "160px" }}>Username</th>
-                <th>Watch Time</th>
-                <th>Mensagens</th>
-                <th>Pontos de Reciprocidade</th>
-                {selectedMode !== "week" && selectedMode !== "eternal" ? null : (
-                  <th style={{ width: "70px" }}>Tend.</th>
-                )}
-                <th style={{ width: "140px" }}>Status</th>
-                <th style={{ width: "60px" }}>Ações</th>
+                <th>Canal</th>
+                <th style={{ width: "120px", textAlign: "center" }}>Seguidor?</th>
+                <th style={{ width: "120px", textAlign: "center" }}>Subscriber?</th>
+                <th style={{ width: "160px", textAlign: "center" }}>Já Falou no Chat?</th>
+                <th style={{ width: "140px", textAlign: "center" }}>Status</th>
+                <th style={{ width: "180px" }}>Última Verificação</th>
+                <th style={{ width: "100px", textAlign: "center" }}>Ações</th>
               </tr>
             </thead>
             <tbody>
-              {rankings.map((result: RankingResult, idx: number) => {
-                // Trend rendering
-                let trendIcon = <Minus size={16} className="trend-icon trend-icon--stable" />;
-                if (result.trendDirection === "up") {
-                  trendIcon = <ArrowUp size={16} className="trend-icon trend-icon--up" />;
-                } else if (result.trendDirection === "down") {
-                  trendIcon = <ArrowDown size={16} className="trend-icon trend-icon--down" />;
-                }
-
-                const displayPoints = result.points === 1 ? "1 ponto" : `${result.points} pontos`;
+              {reciprocityData.map((item) => {
+                const isReciprocal = item.chatted && (item.following || item.subscriber);
 
                 return (
-                  <tr
-                    key={`${result.platform}:${result.username}`}
-                    className="reciprocity-row-clickable"
-                    onClick={() => handleOpenDetails(result.username, result.platform)}
-                    title="Clique para ver o histórico e gráficos deste espectador"
-                  >
+                  <tr key={item.username}>
                     <td>
-                      <strong className="rank-position">#{result.rank}</strong>
-                    </td>
-                    <td>
-                      <div className="name-cell">
-                        <strong>{result.displayName}</strong>
-                        <ChevronRight size={14} className="hover-arrow" />
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                        {item.avatarUrl ? (
+                          <img
+                            src={item.avatarUrl}
+                            alt={item.displayName}
+                            style={{
+                              width: "32px",
+                              height: "32px",
+                              borderRadius: "50%",
+                              border: "1px solid #28343a",
+                            }}
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              width: "32px",
+                              height: "32px",
+                              borderRadius: "50%",
+                              background: "#28343a",
+                              color: "#f6fafb",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: "12px",
+                              fontWeight: "bold",
+                            }}
+                          >
+                            {item.displayName.substring(0, 2).toUpperCase()}
+                          </div>
+                        )}
+                        <div style={{ display: "flex", flexDirection: "column" }}>
+                          <strong style={{ color: "#f6fafb" }}>{item.displayName}</strong>
+                          <a
+                            href={`https://kick.com/${item.username}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "4px",
+                              fontSize: "11px",
+                              color: "#75e39b",
+                              textDecoration: "none",
+                              marginTop: "2px",
+                            }}
+                          >
+                            <span>kick.com/{item.username}</span>
+                            <ExternalLink size={10} />
+                          </a>
+                        </div>
                       </div>
                     </td>
-                    <td>
-                      <span className="platform-pill" data-platform={result.platform}>
-                        {result.platform}
-                      </span>
+                    <td style={{ textAlign: "center" }}>
+                      {item.lastChecked ? (
+                        item.following ? (
+                          <CheckCircle2 size={18} style={{ color: "#42c773" }} />
+                        ) : (
+                          <XCircle size={18} style={{ color: "#dc5d57" }} />
+                        )
+                      ) : (
+                        <span style={{ color: "#8fa1a8", fontSize: "12px" }}>-</span>
+                      )}
                     </td>
-                    <td>
-                      <code className="username-code">{result.username}</code>
+                    <td style={{ textAlign: "center" }}>
+                      {item.lastChecked ? (
+                        item.subscriber ? (
+                          <CheckCircle2 size={18} style={{ color: "#42c773" }} />
+                        ) : (
+                          <XCircle size={18} style={{ color: "#dc5d57" }} />
+                        )
+                      ) : (
+                        <span style={{ color: "#8fa1a8", fontSize: "12px" }}>-</span>
+                      )}
                     </td>
-                    <td>
-                      <strong>{result.watchTimeMinutes} min</strong>
+                    <td style={{ textAlign: "center" }}>
+                      {item.lastChecked ? (
+                        item.chatted ? (
+                          <CheckCircle2 size={18} style={{ color: "#42c773" }} />
+                        ) : (
+                          <XCircle size={18} style={{ color: "#dc5d57" }} />
+                        )
+                      ) : (
+                        <span style={{ color: "#8fa1a8", fontSize: "12px" }}>-</span>
+                      )}
                     </td>
-                    <td>{result.messageCount}</td>
-                    <td>
-                      <span className="score-badge" style={{ fontSize: "14px" }}>{displayPoints}</span>
+                    <td style={{ textAlign: "center" }}>
+                      {item.lastChecked ? (
+                        isReciprocal ? (
+                          <span className="status-pill" data-status="Active" style={{ background: "rgba(66, 199, 115, 0.15)", color: "#42c773", padding: "4px 8px", borderRadius: "12px", fontSize: "11px", fontWeight: "bold" }}>
+                            Recíproco
+                          </span>
+                        ) : (
+                          <span className="status-pill" data-status="Inactive" style={{ background: "rgba(220, 93, 87, 0.15)", color: "#dc5d57", padding: "4px 8px", borderRadius: "12px", fontSize: "11px", fontWeight: "bold" }}>
+                            Não Recíproco
+                          </span>
+                        )
+                      ) : (
+                        <span className="status-pill" data-status="New" style={{ background: "rgba(143, 161, 168, 0.15)", color: "#8fa1a8", padding: "4px 8px", borderRadius: "12px", fontSize: "11px", fontWeight: "bold" }}>
+                          Pendente
+                        </span>
+                      )}
                     </td>
-                    {selectedMode !== "week" && selectedMode !== "eternal" ? null : (
-                      <td>{trendIcon}</td>
-                    )}
-                    <td>
-                      <span className="status-pill" data-status={result.status}>
-                        {result.status}
-                      </span>
+                    <td style={{ fontSize: "12px", color: "#8fa1a8" }}>
+                      {item.lastChecked
+                        ? new Date(item.lastChecked).toLocaleString()
+                        : "Nunca verificado"}
                     </td>
-                    <td>
+                    <td style={{ textAlign: "center" }}>
                       <button
                         type="button"
-                        className="btn btn--danger btn--small"
-                        onClick={(e) => {
-                          e.stopPropagation(); // Prevent opening detail panel
-                          setUserToHide(result);
+                        className="btn btn--secondary btn--small"
+                        disabled={isSyncing || kickLoginStatus !== "connected" || !hasApiKey}
+                        onClick={() => void syncOne(item.username)}
+                        style={{
+                          height: "26px",
+                          padding: "0 8px",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "4px",
+                          fontSize: "11px",
                         }}
-                        style={{ padding: "0 8px", height: "28px" }}
-                        title="Ocultar do ranking"
                       >
-                        Ocultar
+                        <RefreshCw size={12} />
+                        <span>Verificar</span>
                       </button>
                     </td>
                   </tr>
@@ -357,21 +336,6 @@ export function ReciprocityDashboard() {
           </table>
         </div>
       )}
-
-      <ConfirmModal
-        isOpen={userToHide !== null}
-        title="Ocultar Usuário"
-        message={`Deseja ocultar ${userToHide?.displayName} do ranking de reciprocidade?`}
-        onConfirm={() => {
-          if (userToHide) {
-            blockUser(userToHide.platform, userToHide.username);
-            setUserToHide(null);
-          }
-        }}
-        onCancel={() => setUserToHide(null)}
-        confirmText="Ocultar"
-        cancelText="Cancelar"
-      />
     </div>
   );
 }
