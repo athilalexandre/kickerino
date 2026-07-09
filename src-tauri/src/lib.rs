@@ -890,26 +890,66 @@ async fn check_kick_relationships(
 
     let js_script = format!(
         r#"
-        (async function() {{
-            const ourChannel = "{}";
-            const usernames = {};
-            const results = [];
-            for (const username of usernames) {{
-                let following = false;
-                let subscriber = false;
+        (function() {{
+            function tauriLog(level, message) {{
+                const ts = new Date().toLocaleTimeString();
                 try {{
-                    const res = await fetch(`https://kick.com/api/v2/channels/${{ourChannel}}/users/${{username}}`);
-                    if (res.ok) {{
-                        const data = await res.json();
-                        following = data.following === true || (data.relation && data.relation.following === true);
-                        subscriber = (data.subscriber && data.subscriber.active === true) || (data.relation && data.relation.subscriber === true);
+                    if (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) {{
+                        window.__TAURI__.core.invoke('log_message', {{ level, message, timestamp: ts }}).catch(() => {{}});
+                    }} else if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.ipc && window.__TAURI_INTERNALS__.ipc.postMessage) {{
+                        window.__TAURI_INTERNALS__.ipc.postMessage({{
+                            cmd: 'log_message',
+                            level: level,
+                            message: message,
+                            timestamp: ts
+                        }});
                     }}
-                }} catch(e) {{
-                    console.error("Error checking relationship for " + username, e);
+                }} catch (e) {{
+                    console.error("Log failed", e);
                 }}
-                results.push({{ username, following, subscriber }});
             }}
-            window.location.hash = "relation_done:" + JSON.stringify(results);
+
+            async function runCheck() {{
+                tauriLog("info", "Iniciando verificacao de relacionamentos no webview...");
+                await new Promise(r => setTimeout(r, 2000));
+                
+                const ourChannel = "{}";
+                const usernames = {};
+                const results = [];
+                
+                tauriLog("info", "Canais a verificar: " + usernames.join(", "));
+                
+                for (const username of usernames) {{
+                    let following = false;
+                    let subscriber = false;
+                    try {{
+                        const url = `https://kick.com/api/v2/channels/${{ourChannel}}/users/${{username}}`;
+                        tauriLog("info", "Consultando endpoint: " + url);
+                        const res = await fetch(url);
+                        tauriLog("info", "Status da resposta para " + username + ": " + res.status);
+                        if (res.ok) {{
+                            const data = await res.json();
+                            following = data.following === true || (data.relation && data.relation.following === true);
+                            subscriber = (data.subscriber && data.subscriber.active === true) || (data.relation && data.relation.subscriber === true);
+                            tauriLog("info", "Resultado " + username + " -> follow: " + following + ", sub: " + subscriber);
+                        }} else {{
+                            tauriLog("warn", "Falha na resposta do endpoint para " + username);
+                        }}
+                    }} catch(e) {{
+                        tauriLog("error", "Erro ao fazer fetch para " + username + ": " + e.message);
+                    }}
+                    results.push({{ username, following, subscriber }});
+                }}
+                
+                tauriLog("success", "Verificacao finalizada. Gravando hash de conclusao.");
+                window.location.hash = "relation_done:" + JSON.stringify(results);
+            }}
+
+            if (document.readyState === "complete") {{
+                runCheck();
+            }} else {{
+                window.addEventListener("load", runCheck);
+            }}
         }})();
         "#,
         our_channel,
@@ -923,7 +963,9 @@ async fn check_kick_relationships(
     )
     .title("Relationship Checker")
     .inner_size(300.0, 300.0)
-    .visible(false)
+    .position(-3000.0, -3000.0)
+    .visible(true)
+    .decorations(false)
     .skip_taskbar(true)
     .initialization_script(&js_script);
 
