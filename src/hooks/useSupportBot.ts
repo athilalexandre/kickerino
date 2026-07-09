@@ -214,24 +214,24 @@ export function useSupportBot({ channels, settings, setChannels }: SupportBotPar
   // Redefine activeSupportSlugs: channels that should be supported (individual support or global support enabled)
   const activeSupportSlugs = channels
     .filter((channel) => {
+      // Se o canal não estiver AO VIVO, nunca apoia
+      if (channel.status !== "live") {
+        return false;
+      }
+
       // Se o apoio individual estiver explicitamente desativado, nunca apóia
       if (channel.supportEnabled === false) {
         return false;
       }
 
-      // Se o apoio individual estiver explicitamente ativado no card, apoia sempre (ignorando status)
+      // Se o apoio individual estiver explicitamente ativado no card e o canal estiver live, apoia
       if (channel.supportEnabled === true) {
         return true;
       }
 
-      // Se o robô global estiver ativado e o canal estiver no estado padrão (undefined)
+      // Se o robô global estiver ativado e o canal estiver no estado padrão (undefined) e estiver live
       if (settings.supportBotEnabled) {
-        if (channel.status === "live") {
-          return true;
-        }
-        if (channel.status === "offline") {
-          return settings.supportOfflineChannels;
-        }
+        return true;
       }
       return false;
     })
@@ -327,6 +327,12 @@ export function useSupportBot({ channels, settings, setChannels }: SupportBotPar
       return;
     }
 
+    // Se o canal não estiver AO VIVO, descarta o envio de qualquer maneira (previne envio offline)
+    if (channel.status !== "live") {
+      setSendQueue((q) => q.slice(1));
+      return;
+    }
+
     if (!isManual) {
       // Se o apoio individual estiver explicitamente desativado, descarta
       if (channel.supportEnabled === false) {
@@ -334,14 +340,11 @@ export function useSupportBot({ channels, settings, setChannels }: SupportBotPar
         return;
       }
 
-      // Se o apoio individual estiver explicitamente ativado (verde no card), aceita o envio incondicionalmente
+      // Se o apoio individual estiver explicitamente ativado (verde no card), aceita o envio
       const isIndividuallySupported = channel.supportEnabled === true;
 
-      // Se estiver no estado padrão (undefined) e o robô global estiver ligado, valida as regras de status
-      const isGloballySupported =
-        settings.supportBotEnabled &&
-        (channel.status === "live" ||
-          (channel.status === "offline" && settings.supportOfflineChannels));
+      // Se estiver no estado padrão (undefined) e o robô global estiver ligado, valida
+      const isGloballySupported = settings.supportBotEnabled;
 
       if (!isIndividuallySupported && !isGloballySupported) {
         setSendQueue((q) => q.slice(1));
@@ -464,7 +467,6 @@ export function useSupportBot({ channels, settings, setChannels }: SupportBotPar
     activeSupportSlugs.length,
     settings.supportPreferredQuality,
     settings.supportQualityCheckSeconds,
-    settings.supportOfflineChannels,
     settings.supportBotEnabled,
     setChannels,
   ]);

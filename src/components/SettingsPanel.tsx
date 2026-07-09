@@ -89,22 +89,6 @@ export function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
         </span>
       </label>
 
-      <label className="toggle-row">
-        <input
-          type="checkbox"
-          checked={settings.supportOfflineChannels}
-          onChange={(event) =>
-            onChange({
-              ...settings,
-              supportOfflineChannels: event.currentTarget.checked,
-            })
-          }
-        />
-        <span>
-          Apoiar offline
-        </span>
-      </label>
-
       <label className="field-row">
         <span>Resolução</span>
         <select

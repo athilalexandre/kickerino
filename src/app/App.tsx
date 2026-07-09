@@ -410,7 +410,7 @@ export function App() {
                       onRemove={removeAndRetainSelection}
                       onSelect={setSelectedSlug}
                       openLiveOnDoubleClick={settings.openLiveOnDoubleClick}
-                      isSupported={channel.supportEnabled !== false}
+                      isSupported={channel.supportEnabled !== false && channel.status === "live"}
                       supportTimer={supportTimers[channel.slug]}
                       onSendNow={triggerManualMessage}
                       onToggleSupport={toggleChannelSupport}

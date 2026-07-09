@@ -1,43 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 
 export function playLiveAlert() {
-  const AudioContextClass = window.AudioContext ?? window.webkitAudioContext;
-  if (!AudioContextClass) {
-    return;
-  }
-
-  let context: AudioContext | null = null;
-  try {
-    context = new AudioContextClass();
-    const gain = context.createGain();
-    const first = context.createOscillator();
-    const second = context.createOscillator();
-
-    first.type = "sine";
-    first.frequency.value = 740;
-    second.type = "sine";
-    second.frequency.value = 980;
-    gain.gain.value = 0.08;
-
-    first.connect(gain);
-    second.connect(gain);
-    gain.connect(context.destination);
-
-    first.start();
-    second.start(context.currentTime + 0.16);
-    first.stop(context.currentTime + 0.16);
-    second.stop(context.currentTime + 0.34);
-
-    const ctx = context;
-    window.setTimeout(() => {
-      ctx.close().catch((err) => console.error("Error closing AudioContext:", err));
-    }, 600);
-  } catch (err) {
-    console.error("Error playing live alert sound:", err);
-    if (context) {
-      context.close().catch(() => {});
-    }
-  }
+  // Chamamos o comando de áudio nativo do Rust para contornar as restrições de autoplay da webview
+  playSound(40);
 }
 
 export function playDefaultTimerAlert(volume: number) {

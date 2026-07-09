@@ -82,10 +82,10 @@ export function HelpModal({ isOpen, onClose }: HelpModalProps) {
                   <strong>🤖 Lógica Híbrida de Ativação:</strong>
                   <ul>
                     <li>
-                      <strong>Botão do Card Verde:</strong> O robô deste canal está ativado <strong>individualmente</strong> e rodará incondicionalmente, mesmo se o botão global estiver desligado.
+                      <strong>Botão do Card Verde:</strong> O robô deste canal está ativado <strong>individualmente</strong> e rodará para o canal enquanto ele estiver <code>AO VIVO</code>, mesmo se o botão global estiver desligado.
                     </li>
                     <li>
-                      <strong>Botão do Card Cinza:</strong> Segue o estado global do robô. Se o robô global (cabeçalho) for ligado, todos os cards cinzas ativam e enviam mensagens para os canais que estiverem <code>AO VIVO</code> (ou também offline, se a flag "Apoiar offline" estiver ativa).
+                      <strong>Botão do Card Cinza:</strong> Segue o estado global do robô. Se o robô global (cabeçalho) for ligado, todos os cards cinzas ativam e enviam mensagens para os canais que estiverem <code>AO VIVO</code>.
                     </li>
                   </ul>
                 </div>
