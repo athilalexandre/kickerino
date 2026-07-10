@@ -1,0 +1,27 @@
+[[permission]]
+identifier = "allow-kickerino-commands"
+description = "Permite a execucao de todos os comandos do Kickerino no frontend"
+
+[[permission.allow]]
+commands = [
+  "app_version",
+  "fetch_kick_channel",
+  "fetch_latest_release",
+  "open_support_window",
+  "close_support_window",
+  "close_all_support_windows",
+  "open_login_window",
+  "logout_kick",
+  "send_support_message",
+  "log_message",
+  "fetch_channels_emotes",
+  "fetch_missxss_watch_time",
+  "fetch_missxss_top_watch_time",
+  "check_kick_relationships",
+  "has_missxss_api_key",
+  "save_missxss_api_key",
+  "delete_missxss_api_key",
+  "install_update",
+  "select_sound_file",
+  "play_sound_rust"
+]

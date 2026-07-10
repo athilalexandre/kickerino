@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Permissoes padrao do Kickerino",
   "windows": ["main"],
-  "permissions": ["core:default", "opener:default", "notification:default"]
+  "permissions": ["core:default", "opener:default", "notification:default", "allow-kickerino-commands"]
 }
