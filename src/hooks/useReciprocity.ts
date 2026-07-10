@@ -157,7 +157,7 @@ export function useReciprocity({ channels, kickUsername, kickLoginStatus }: UseR
         return;
       }
 
-      // 1. Fetch chat statuses from MissXss
+      // 1. Fetch chat statuses from MissXss (parallel, each is a fast individual call)
       const chattedMap: Record<string, boolean> = {};
       await Promise.all(
         channels.map(async (c) => {
@@ -176,24 +176,29 @@ export function useReciprocity({ channels, kickUsername, kickLoginStatus }: UseR
         })
       );
 
-      // 2. Fetch relationship statuses from Kick
+      // 2. Fetch relationship statuses from Kick in batches of 10
+      const BATCH_SIZE = 10;
       const relationMap: Record<string, { following: boolean; subscriber: boolean }> = {};
-      try {
-        const kickRelations = await invoke<any[]>("check_kick_relationships", {
-          ourChannel: kickUsername,
-          theirChannels: slugs,
-        });
-        if (kickRelations) {
-          for (const rel of kickRelations) {
-            relationMap[rel.username.toLowerCase()] = {
-              following: rel.following,
-              subscriber: rel.subscriber,
-            };
+
+      for (let i = 0; i < slugs.length; i += BATCH_SIZE) {
+        const batch = slugs.slice(i, i + BATCH_SIZE);
+        try {
+          const kickRelations = await invoke<any[]>("check_kick_relationships", {
+            ourChannel: kickUsername,
+            theirChannels: batch,
+          });
+          if (kickRelations) {
+            for (const rel of kickRelations) {
+              relationMap[rel.username.toLowerCase()] = {
+                following: rel.following,
+                subscriber: rel.subscriber,
+              };
+            }
           }
+        } catch (e) {
+          console.error(`[Reciprocity] Erro ao buscar relacionamentos (batch ${Math.floor(i / BATCH_SIZE) + 1}):`, e);
+          // Continue with next batch instead of failing entirely
         }
-      } catch (e) {
-        console.error("[Reciprocity] Erro ao buscar relacionamentos na Kick:", e);
-        setSyncError(String(e) || "Erro ao conectar com a Kick.");
       }
 
       // 3. Merge and update

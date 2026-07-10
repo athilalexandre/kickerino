@@ -973,8 +973,13 @@ async fn check_kick_relationships(
 
     let mut results: Option<Vec<KickRelation>> = None;
 
-    for _ in 0..40 { // 20 seconds timeout
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    // Dynamic timeout: 20s base + 1.5s per channel (each fetch takes ~200-500ms)
+    let timeout_ms = 20_000 + (their_channels.len() as u64 * 1500);
+    let poll_interval_ms = 500;
+    let max_polls = timeout_ms / poll_interval_ms;
+
+    for _ in 0..max_polls {
+        tokio::time::sleep(std::time::Duration::from_millis(poll_interval_ms)).await;
         if app.get_webview_window(label).is_none() {
             break;
         }

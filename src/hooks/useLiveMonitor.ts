@@ -85,6 +85,10 @@ export function useLiveMonitor({
           ...previous,
           ...result,
           lastWentLiveAt,
+          // Quando o canal sai do ar (era live e agora está offline), desliga o robô desse canal
+          ...(previous.status === "live" && result.status === "offline"
+            ? { supportEnabled: false }
+            : {}),
         };
 
         // Transition from offline or unknown to live, and make sure we haven't already notified for this live session
