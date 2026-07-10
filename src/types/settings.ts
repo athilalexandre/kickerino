@@ -8,6 +8,9 @@ export type AppSettings = {
   supportMessagesText: string;
   supportPreferredQuality: string;
   supportQualityCheckSeconds: number;
+  useGlobalHumanMessages: boolean;
+  greetingTemplate: string;
+  globalSupportMessages: string[];
 };
 
 

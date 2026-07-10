@@ -22,6 +22,7 @@ import {
 import { ReciprocityDashboard } from "../components/reciprocity/ReciprocityDashboard";
 import { useSoundTimers } from "../hooks/useSoundTimers";
 import { SoundTimersDashboard } from "../components/SoundTimersDashboard";
+import { SupportMessagesDashboard } from "../components/SupportMessagesDashboard";
 
 type UpdateState = {
   status: "idle" | "checking" | "current" | "available" | "error" | "downloading";
@@ -31,7 +32,7 @@ type UpdateState = {
 };
 
 export function App() {
-  const [currentTab, setCurrentTab] = useState<"monitor" | "reciprocity" | "timers">("monitor");
+  const [currentTab, setCurrentTab] = useState<"monitor" | "messages" | "reciprocity" | "timers">("monitor");
   const [selectedSlug, setSelectedSlug] = useState("all");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -257,6 +258,13 @@ export function App() {
             Apoio de Canais
           </button>
           <button
+            className={`main-tab ${currentTab === "messages" ? "main-tab--active" : ""}`}
+            type="button"
+            onClick={() => setCurrentTab("messages")}
+          >
+            Frases de Apoio
+          </button>
+          <button
             className={`main-tab ${currentTab === "reciprocity" ? "main-tab--active" : ""}`}
             type="button"
             onClick={() => setCurrentTab("reciprocity")}
@@ -471,6 +479,13 @@ export function App() {
               )}
             </section>
           </>
+        ) : currentTab === "messages" ? (
+          <section className="content" style={{ padding: "18px 24px" }}>
+            <SupportMessagesDashboard
+              settings={settings}
+              onChange={handleSettingsChange}
+            />
+          </section>
         ) : currentTab === "reciprocity" ? (
           <section className="content" style={{ padding: "18px 24px" }}>
             <ReciprocityDashboard

@@ -205,6 +205,7 @@ export function useSupportBot({ channels, settings, setChannels }: SupportBotPar
   const isSendingRef = useRef<boolean>(false);
   const [isSendingState, setIsSendingState] = useState<boolean>(false);
   const processingRef = useRef<string | null>(null);
+  const sentGreetingsRef = useRef<Set<string>>(new Set());
 
   const channelsRef = useRef(channels);
   useEffect(() => {
@@ -293,6 +294,14 @@ export function useSupportBot({ channels, settings, setChannels }: SupportBotPar
     setSendQueue((current) =>
       current.filter((item) => item.isManual || activeSupportSlugs.includes(item.slug))
     );
+
+    // Limpa os canais inativos do sentGreetingsRef
+    const currentGreetings = sentGreetingsRef.current;
+    for (const slug of Array.from(currentGreetings)) {
+      if (!activeSupportSlugs.includes(slug)) {
+        currentGreetings.delete(slug);
+      }
+    }
   }, [activeSlugsSerialized]);
 
   // Close windows if no channels are active and we are not sending manually
@@ -381,35 +390,65 @@ export function useSupportBot({ channels, settings, setChannels }: SupportBotPar
         return;
       }
 
-      const supportConfig = channel.supportConfig || { messages: [], nextMessageIndex: 0 };
-      const rawMessages = supportConfig.messages && supportConfig.messages.length > 0
-        ? supportConfig.messages
-        : ["No apoio"];
-
       let messagesToSend: string[] = [];
-      if (supportConfig.sendAllAtOnce) {
-        messagesToSend = [...rawMessages];
-      } else if (supportConfig.rotateMessages) {
-        const nextIdx = supportConfig.nextMessageIndex || 0;
-        messagesToSend = [rawMessages[nextIdx % rawMessages.length]];
 
-        // Increment nextMessageIndex in react state/localStorage
-        const nextNextIdx = (nextIdx + 1) % rawMessages.length;
-        setChannels((prev) =>
-          prev.map((c) =>
-            c.slug === nextSlug
-              ? {
-                  ...c,
-                  supportConfig: c.supportConfig
-                    ? { ...c.supportConfig, nextMessageIndex: nextNextIdx }
-                    : { messages: [], nextMessageIndex: nextNextIdx },
-                }
-              : c
-          )
-        );
+      if (settings.useGlobalHumanMessages) {
+        const hasSentGreeting = sentGreetingsRef.current.has(nextSlug);
+        const greetingTpl = settings.greetingTemplate || "Salve {channel}, bora que bora!";
+        const humanMsgs = settings.globalSupportMessages && settings.globalSupportMessages.length > 0
+          ? settings.globalSupportMessages
+          : ["No apoio!"];
+        const displayCh = channel.username || nextSlug;
+
+        if (!hasSentGreeting) {
+          // Envia a saudação inicial baseada no template
+          const h = new Date().getHours();
+          const timeOfDay = h < 12 ? 'Bom dia' : (h < 18 ? 'Boa tarde' : 'Boa noite');
+          const days = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+          
+          const greeting = greetingTpl
+            .replace(/{timeOfDay}/g, timeOfDay)
+            .replace(/{channel}/g, displayCh)
+            .replace(/{dayOfWeek}/g, days[new Date().getDay()]);
+            
+          messagesToSend = [greeting];
+          sentGreetingsRef.current.add(nextSlug);
+        } else {
+          // Envia frase de apoio aleatória
+          const randomRaw = humanMsgs[Math.floor(Math.random() * humanMsgs.length)];
+          const randomMsg = randomRaw.replace(/{channel}/g, displayCh);
+          messagesToSend = [randomMsg];
+        }
       } else {
-        // Envia apenas a primeira mensagem da lista (modo de envio unitário simples)
-        messagesToSend = [rawMessages[0]];
+        const supportConfig = channel.supportConfig || { messages: [], nextMessageIndex: 0 };
+        const rawMessages = supportConfig.messages && supportConfig.messages.length > 0
+          ? supportConfig.messages
+          : ["No apoio"];
+
+        if (supportConfig.sendAllAtOnce) {
+          messagesToSend = [...rawMessages];
+        } else if (supportConfig.rotateMessages) {
+          const nextIdx = supportConfig.nextMessageIndex || 0;
+          messagesToSend = [rawMessages[nextIdx % rawMessages.length]];
+
+          // Increment nextMessageIndex in react state/localStorage
+          const nextNextIdx = (nextIdx + 1) % rawMessages.length;
+          setChannels((prev) =>
+            prev.map((c) =>
+              c.slug === nextSlug
+                ? {
+                    ...c,
+                    supportConfig: c.supportConfig
+                      ? { ...c.supportConfig, nextMessageIndex: nextNextIdx }
+                      : { messages: [], nextMessageIndex: nextNextIdx },
+                  }
+                : c
+            )
+          );
+        } else {
+          // Envia apenas a primeira mensagem da lista (modo de envio unitário simples)
+          messagesToSend = [rawMessages[0]];
+        }
       }
 
       const allSlugs = channelsRef.current.map((c) => c.slug);
