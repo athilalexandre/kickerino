@@ -13,7 +13,7 @@ type ChannelListProps = {
   onRefresh: () => void;
   onSelect: (slug: string) => void;
   activeSupportSlugs: string[];
-  supportTimers: Record<string, number>;
+  channelSupportStatuses?: Record<string, "pending" | "sending" | "sent" | "failed">;
 };
 
 export function ChannelList({
@@ -24,7 +24,7 @@ export function ChannelList({
   onRefresh,
   onSelect,
   activeSupportSlugs,
-  supportTimers,
+  channelSupportStatuses = {},
 }: ChannelListProps) {
   const [draft, setDraft] = useState("");
 
@@ -63,7 +63,7 @@ export function ChannelList({
         {channels.map((channel) => {
           const displayName = channel.username ?? channel.slug;
           const isSupported = activeSupportSlugs.includes(channel.slug);
-          const supportTimer = supportTimers[channel.slug];
+          const sendingStatus = channelSupportStatuses[channel.slug];
           return (
             <button
               className={`sidebar-row ${selectedSlug === channel.slug ? "sidebar-row--active" : ""}`}
@@ -74,25 +74,31 @@ export function ChannelList({
               <ChannelAvatar src={channel.avatarUrl} name={displayName} />
               <span className="sidebar-row__name">{displayName}</span>
               <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                {isSupported && (
+                {isSupported && sendingStatus && (
                   <span 
-                    title={`Robo de Apoio Ativo (${supportTimer !== undefined ? formatCountdown(supportTimer) : ""})`} 
+                    title={`Status de envio: ${sendingStatus}`} 
                     style={{ 
                       display: "inline-flex", 
                       alignItems: "center", 
                       gap: "3px",
                       fontSize: "10px",
-                      color: "#42c773",
+                      color: sendingStatus === "sent" ? "#42c773" : 
+                             sendingStatus === "failed" ? "#dc5d57" :
+                             sendingStatus === "sending" ? "#3b82f6" : "#8fa1a8",
                       fontWeight: "bold",
-                      background: "rgba(66, 199, 115, 0.1)",
+                      background: sendingStatus === "sent" ? "rgba(66, 199, 115, 0.1)" :
+                                  sendingStatus === "failed" ? "rgba(220, 93, 87, 0.1)" :
+                                  sendingStatus === "sending" ? "rgba(59, 130, 246, 0.1)" : "rgba(143, 161, 168, 0.1)",
                       padding: "1px 4px",
                       borderRadius: "3px"
                     }}
                   >
                     <Bot size={11} />
-                    {supportTimer !== undefined && (
-                      <span>{formatCountdown(supportTimer)}</span>
-                    )}
+                    <span>
+                      {sendingStatus === "sent" ? "Enviado" :
+                       sendingStatus === "failed" ? "Falhou" :
+                       sendingStatus === "sending" ? "Env..." : "Pend."}
+                    </span>
                   </span>
                 )}
                 <StatusBadge status={channel.status} />

@@ -5,11 +5,19 @@ import { MessageSquare, HelpCircle, RefreshCw, CheckCircle2 } from "lucide-react
 interface SupportMessagesDashboardProps {
   settings: AppSettings;
   onChange: (settings: AppSettings) => void;
+  logs?: string[];
+  onClearLogs?: () => void;
 }
 
-export function SupportMessagesDashboard({ settings, onChange }: SupportMessagesDashboardProps) {
+export function SupportMessagesDashboard({
+  settings,
+  onChange,
+  logs = [],
+  onClearLogs,
+}: SupportMessagesDashboardProps) {
   const [useGlobal, setUseGlobal] = useState(settings.useGlobalHumanMessages);
   const [greeting, setGreeting] = useState(settings.greetingTemplate);
+  const [cooldown, setCooldown] = useState(settings.supportIntervalMinutes);
   const [messagesText, setMessagesText] = useState(() =>
     (settings.globalSupportMessages || []).join("\n")
   );
@@ -27,6 +35,7 @@ export function SupportMessagesDashboard({ settings, onChange }: SupportMessages
       useGlobalHumanMessages: useGlobal,
       greetingTemplate: greeting.trim(),
       globalSupportMessages: parsedMessages,
+      supportIntervalMinutes: cooldown,
     });
 
     setSaveSuccess(true);
@@ -34,9 +43,9 @@ export function SupportMessagesDashboard({ settings, onChange }: SupportMessages
   };
 
   const handleReset = () => {
-    // Reset to default settings values
     setUseGlobal(true);
     setGreeting("Salve {channel}, bora que bora!");
+    setCooldown(10);
     setMessagesText([
       "Boa live, {channel}! Passando pra deixar aquele apoio de sempre.",
       "Tamo junto, {channel}! Que a stream de hoje seja leve e divertida.",
@@ -111,6 +120,18 @@ export function SupportMessagesDashboard({ settings, onChange }: SupportMessages
     ].join("\n"));
   };
 
+  const handleDownloadLogs = () => {
+    if (!logs || logs.length === 0) return;
+    const text = logs.join("\n");
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `kickerino_bot_log_${new Date().toISOString().slice(0, 10)}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const totalLines = messagesText.split("\n").filter((l) => l.trim().length > 0).length;
 
   return (
@@ -122,7 +143,7 @@ export function SupportMessagesDashboard({ settings, onChange }: SupportMessages
             Configuração de Frases de Apoio
           </h3>
           <p style={{ marginTop: "4px" }}>
-            Configure mensagens humanas e saudações automáticas para serem enviadas aos streamers.
+            Configure mensagens humanas, saudações automáticas e intervalos para o robô geral de apoio.
           </p>
         </div>
 
@@ -183,7 +204,7 @@ export function SupportMessagesDashboard({ settings, onChange }: SupportMessages
 
       <div className="settings-panel-grid" style={{ opacity: useGlobal ? 1 : 0.6, transition: "opacity 200ms ease" }}>
         
-        {/* Lado Esquerdo: Saudação Inicial e Ajuda */}
+        {/* Lado Esquerdo: Saudação Inicial, Cooldown e Ajuda */}
         <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
           <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
             <label style={{ fontWeight: "600", color: "#f6fafb", display: "flex", alignItems: "center", gap: "6px" }}>
@@ -197,6 +218,31 @@ export function SupportMessagesDashboard({ settings, onChange }: SupportMessages
               disabled={!useGlobal}
               value={greeting}
               onChange={(e) => setGreeting(e.target.value)}
+              style={{
+                width: "100%",
+                height: "38px",
+                padding: "0 12px",
+                border: "1px solid #2a3338",
+                borderRadius: "6px",
+                color: "#edf4f6",
+                background: "#101417",
+                outline: "none"
+              }}
+            />
+          </div>
+
+          <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            <label style={{ fontWeight: "600", color: "#f6fafb", display: "flex", alignItems: "center", gap: "6px" }}>
+              Intervalo de Cooldown (minutos)
+            </label>
+            <span style={{ fontSize: "12px", color: "#8fa1a8" }}>
+              Tempo de espera entre os ciclos de envio para todos os canais online.
+            </span>
+            <input
+              type="number"
+              min={1}
+              value={cooldown}
+              onChange={(e) => setCooldown(Math.max(1, Number(e.target.value)))}
               style={{
                 width: "100%",
                 height: "38px",
@@ -271,7 +317,7 @@ export function SupportMessagesDashboard({ settings, onChange }: SupportMessages
             placeholder="Digite suas frases de apoio aqui, uma por linha..."
             style={{
               width: "100%",
-              height: "240px",
+              height: "310px",
               padding: "10px 12px",
               border: "1px solid #2a3338",
               borderRadius: "6px",
@@ -285,6 +331,87 @@ export function SupportMessagesDashboard({ settings, onChange }: SupportMessages
           />
         </div>
 
+      </div>
+
+      {/* Seção de Logs do Robô de Apoio */}
+      <div style={{
+        marginTop: "10px",
+        borderTop: "1px solid #28343a",
+        paddingTop: "20px",
+        display: "flex",
+        flexDirection: "column",
+        gap: "10px",
+        width: "100%"
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h4 style={{ margin: 0, color: "#f6fafb", display: "flex", alignItems: "center", gap: "8px" }}>
+            <span style={{
+              display: "inline-block",
+              width: "8px",
+              height: "8px",
+              borderRadius: "50%",
+              background: settings.supportBotEnabled ? "#75e39b" : "#dc5d57",
+              boxShadow: settings.supportBotEnabled ? "0 0 8px #75e39b" : "none"
+            }} />
+            Logs de Execução do Robô Geral
+          </h4>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button
+              type="button"
+              className="btn btn--secondary"
+              onClick={handleDownloadLogs}
+              disabled={!logs || logs.length === 0}
+              style={{ padding: "4px 10px", fontSize: "12px", height: "30px" }}
+            >
+              Baixar Logs (.txt)
+            </button>
+            <button
+              type="button"
+              className="btn btn--secondary"
+              onClick={onClearLogs}
+              disabled={!logs || logs.length === 0}
+              style={{ padding: "4px 10px", fontSize: "12px", height: "30px", color: "#dc5d57" }}
+            >
+              Limpar Logs
+            </button>
+          </div>
+        </div>
+
+        <div style={{
+          height: "200px",
+          background: "#0a0d0f",
+          border: "1px solid #242b30",
+          borderRadius: "6px",
+          padding: "12px",
+          fontFamily: "monospace",
+          fontSize: "12px",
+          color: "#b5c8cf",
+          overflowY: "auto",
+          display: "flex",
+          flexDirection: "column",
+          gap: "4px",
+          whiteSpace: "pre-wrap"
+        }}>
+          {logs && logs.length > 0 ? (
+            logs.map((log, index) => {
+              let color = "#b5c8cf";
+              if (log.includes("[SUCESSO]")) color = "#75e39b";
+              else if (log.includes("[ERRO]")) color = "#dc5d57";
+              else if (log.includes("[INÍCIO]") || log.includes("[FIM]")) color = "#3b82f6";
+              else if (log.includes("[COOLDOWN]")) color = "#f59e0b";
+
+              return (
+                <div key={index} style={{ color }}>
+                  {log}
+                </div>
+              );
+            })
+          ) : (
+            <div style={{ color: "#54666d", fontStyle: "italic", textAlign: "center", marginTop: "80px" }}>
+              Nenhum log registrado ainda. Ligue o robô geral para iniciar a execução.
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

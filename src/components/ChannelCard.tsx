@@ -12,7 +12,7 @@ type ChannelCardProps = {
   onSelect: (slug: string) => void;
   openLiveOnDoubleClick: boolean;
   isSupported?: boolean;
-  supportTimer?: number;
+  sendingStatus?: "pending" | "sending" | "sent" | "failed";
   onSendNow?: (slug: string) => void;
   onToggleSupport?: (slug: string) => void;
   onUpdateSupportConfig?: (slug: string, config: Partial<ChannelSupportConfig>) => void;
@@ -25,7 +25,7 @@ export function ChannelCard({
   onSelect,
   openLiveOnDoubleClick,
   isSupported,
-  supportTimer,
+  sendingStatus,
   onSendNow,
   onToggleSupport,
   onUpdateSupportConfig,
@@ -113,25 +113,31 @@ export function ChannelCard({
             <span className="channel-card__topline">
               <strong>{displayName}</strong>
               <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                {isSupported && (
+                {isSupported && sendingStatus && (
                   <span 
-                    title="Apoiando no robo (tempo ate a proxima mensagem)" 
+                    title={`Status de envio: ${sendingStatus}`} 
                     style={{ 
                       display: "inline-flex", 
                       alignItems: "center", 
                       gap: "4px",
                       fontSize: "11px",
-                      color: "#42c773",
+                      color: sendingStatus === "sent" ? "#42c773" : 
+                             sendingStatus === "failed" ? "#dc5d57" :
+                             sendingStatus === "sending" ? "#3b82f6" : "#8fa1a8",
                       fontWeight: "bold",
-                      background: "rgba(66, 199, 115, 0.1)",
+                      background: sendingStatus === "sent" ? "rgba(66, 199, 115, 0.1)" :
+                                  sendingStatus === "failed" ? "rgba(220, 93, 87, 0.1)" :
+                                  sendingStatus === "sending" ? "rgba(59, 130, 246, 0.1)" : "rgba(143, 161, 168, 0.1)",
                       padding: "2px 6px",
                       borderRadius: "4px"
                     }}
                   >
                     <Bot size={13} />
-                    {supportTimer !== undefined && (
-                      <span>{formatCountdown(supportTimer)}</span>
-                    )}
+                    <span>
+                      {sendingStatus === "sent" ? "Enviada" :
+                       sendingStatus === "failed" ? "Falhou" :
+                       sendingStatus === "sending" ? "Enviando..." : "Pendente"}
+                    </span>
                   </span>
                 )}
                 <StatusBadge status={channel.status} />

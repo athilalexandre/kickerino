@@ -11,7 +11,7 @@ import { KickAccountModal } from "../components/KickAccountModal";
 import { useChannels } from "../hooks/useChannels";
 import { useLiveMonitor } from "../hooks/useLiveMonitor";
 import { useSettings } from "../hooks/useSettings";
-import { useSupportBot } from "../hooks/useSupportBot";
+import { useSupportBot, formatCountdown } from "../hooks/useSupportBot";
 import type { AppSettings } from "../types/settings";
 import type { ChannelSupportConfig } from "../types/channel";
 import {
@@ -50,10 +50,20 @@ export function App() {
     settings,
   });
 
-  const { activeSupportSlugs, supportTimers, triggerManualMessage } = useSupportBot({
+  const {
+    isBatchRunning,
+    cooldownTime,
+    intervalRemaining,
+    channelSupportStatuses,
+    botLogs,
+    clearLogs,
+    activeSupportSlugs,
+    triggerManualMessage,
+  } = useSupportBot({
     channels,
     settings,
     setChannels,
+    kickUsername,
   });
 
   // Check login status on startup
@@ -179,18 +189,6 @@ export function App() {
   };
 
   const handleSettingsChange = (nextSettings: AppSettings) => {
-    if (nextSettings.supportBotEnabled !== settings.supportBotEnabled) {
-      setChannels((current) =>
-        current.map((channel) => ({
-          ...channel,
-          // Quando liga o robô global, só ativa os canais que estão AO VIVO
-          // Quando desliga, desativa todos
-          supportEnabled: nextSettings.supportBotEnabled
-            ? channel.status === "live"
-            : false,
-        }))
-      );
-    }
     setSettings(nextSettings);
   };
 
@@ -239,9 +237,9 @@ export function App() {
             <h1>Kickerino</h1>
             <p>
               {liveCount} ao vivo
-              {activeSupportSlugs.length > 0 && (
+              {settings.supportBotEnabled && (
                 <span style={{ marginLeft: "8px", color: "#42c773", fontWeight: "bold" }}>
-                  • Robo ativo ({activeSupportSlugs.length})
+                  • Robo ativo {isBatchRunning ? (intervalRemaining > 0 ? `(Intervalo: ${intervalRemaining}s)` : "(Enviando...)") : cooldownTime > 0 ? `(CD: ${formatCountdown(cooldownTime)})` : ""}
                 </span>
               )}
             </p>
@@ -417,7 +415,7 @@ export function App() {
               onRefresh={() => void refreshAll()}
               onSelect={setSelectedSlug}
               activeSupportSlugs={activeSupportSlugs}
-              supportTimers={supportTimers}
+              channelSupportStatuses={channelSupportStatuses}
             />
 
             <section className="content">
@@ -462,8 +460,8 @@ export function App() {
                       onRemove={removeAndRetainSelection}
                       onSelect={setSelectedSlug}
                       openLiveOnDoubleClick={settings.openLiveOnDoubleClick}
-                      isSupported={channel.supportEnabled !== false && channel.status === "live"}
-                      supportTimer={supportTimers[channel.slug]}
+                      isSupported={channel.supportEnabled === true && channel.status === "live"}
+                      sendingStatus={channelSupportStatuses[channel.slug]}
                       onSendNow={triggerManualMessage}
                       onToggleSupport={toggleChannelSupport}
                       onUpdateSupportConfig={updateChannelSupportConfig}
@@ -484,6 +482,8 @@ export function App() {
             <SupportMessagesDashboard
               settings={settings}
               onChange={handleSettingsChange}
+              logs={botLogs}
+              onClearLogs={clearLogs}
             />
           </section>
         ) : currentTab === "reciprocity" ? (

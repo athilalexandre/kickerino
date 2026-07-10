@@ -4,16 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import type { KickChannel } from "../types/channel";
 import type { AppSettings } from "../types/settings";
 
-type QueueItem = {
-  slug: string;
-  isManual: boolean;
-};
-
 type SupportBotParams = {
   channels: KickChannel[];
   settings: AppSettings;
   setChannels: React.Dispatch<React.SetStateAction<KickChannel[]>>;
+  kickUsername: string | null;
 };
+
+export type SupportStatus = "pending" | "sending" | "sent" | "failed";
 
 function buildSupportScript(
   channelSlug: string,
@@ -70,6 +68,7 @@ function buildSupportScript(
       async function sendChatMessage() {
         if (!CONFIG.messages || !CONFIG.messages.length) {
           tauriLog('warn', 'Nenhuma mensagem configurada.');
+          tauriLog('batch-error', '${channelSlug}::Nenhuma mensagem configurada.');
           return;
         }
 
@@ -139,33 +138,55 @@ function buildSupportScript(
             tauriLog('info', 'Mensagem traduzida para emotes: ' + message);
           }
 
-          tauriLog('info', 'Tentando enviar mensagem (' + (i + 1) + '/' + CONFIG.messages.length + ') para ${channelSlug}: ' + message);
+          let success = false;
+          let attempts = 0;
+          let lastError = '';
 
-          try {
-            const sendRes = await fetch('/api/v2/messages/send/' + chatroomId, {
-              method: 'POST',
-              headers: requestHeaders,
-              body: JSON.stringify({
-                content: message,
-                type: 'message'
-              })
-            });
+          while (attempts < 3 && !success) {
+            attempts++;
+            tauriLog('info', 'Tentando enviar mensagem (' + (i + 1) + '/' + CONFIG.messages.length + '), tentativa ' + attempts + '/3 para ${channelSlug}...');
+            try {
+              const sendRes = await fetch('/api/v2/messages/send/' + chatroomId, {
+                method: 'POST',
+                headers: requestHeaders,
+                body: JSON.stringify({
+                  content: message,
+                  type: 'message'
+                })
+              });
 
-            if (sendRes.ok) {
-              tauriLog('success', 'Mensagem ' + (i + 1) + ' enviada com sucesso via API para ${channelSlug}');
-            } else {
-              const errorText = await sendRes.text();
-              tauriLog('error', 'Erro ao enviar mensagem ' + (i + 1) + ': ' + sendRes.status + ' - ' + errorText);
+              if (sendRes.ok) {
+                success = true;
+                tauriLog('success', 'Mensagem ' + (i + 1) + ' enviada com sucesso para ${channelSlug} na tentativa ' + attempts);
+              } else {
+                const errorText = await sendRes.text();
+                lastError = 'Erro ' + sendRes.status + ': ' + errorText;
+                tauriLog('error', 'Erro na tentativa ' + attempts + ' para ${channelSlug}: ' + lastError);
+              }
+            } catch (error) {
+              lastError = error instanceof Error ? error.message : String(error);
+              tauriLog('error', 'Falha na tentativa ' + attempts + ' para ${channelSlug} com excecao: ' + lastError);
             }
-          } catch (error) {
-            tauriLog('error', 'Falha no envio da mensagem ' + (i + 1) + ': ' + (error instanceof Error ? error.message : String(error)));
+
+            if (!success && attempts < 3) {
+              tauriLog('info', 'Aguardando 3 segundos antes de tentar novamente...');
+              await sleep(3000);
+            }
+          }
+
+          if (!success) {
+            tauriLog('batch-error', '${channelSlug}::' + (lastError || 'Erro no envio de mensagem'));
+            return;
           }
 
           if (i < CONFIG.messages.length - 1) {
-            tauriLog('info', 'Aguardando 1.5s antes de enviar a proxima mensagem...');
-            await sleep(1500);
+            const msgDelay = Math.floor(Math.random() * 11000) + 20000; // 20s to 30s
+            tauriLog('info', 'Aguardando ' + (msgDelay / 1000) + 's antes de enviar a proxima mensagem...');
+            await sleep(msgDelay);
           }
         }
+
+        tauriLog('batch-success', '${channelSlug}');
       }
 
       function muteVideos() {
@@ -198,47 +219,164 @@ function buildSupportScript(
   `;
 }
 
-export function useSupportBot({ channels, settings, setChannels }: SupportBotParams) {
-  const [sendQueue, setSendQueue] = useState<QueueItem[]>([]);
-  const [supportTimers, setSupportTimers] = useState<Record<string, number>>({});
-  const timeoutRef = useRef<number | null>(null);
-  const isSendingRef = useRef<boolean>(false);
-  const [isSendingState, setIsSendingState] = useState<boolean>(false);
-  const processingRef = useRef<string | null>(null);
-  const sentGreetingsRef = useRef<Set<string>>(new Set());
+export function useSupportBot({ channels, settings, setChannels, kickUsername }: SupportBotParams) {
+  const [isBatchRunning, setIsBatchRunning] = useState<boolean>(false);
+  const [batchQueue, setBatchQueue] = useState<string[]>([]);
+  const [currentSlug, setCurrentSlug] = useState<string | null>(null);
+  const [cooldownTime, setCooldownTime] = useState<number>(0);
+  const [intervalRemaining, setIntervalRemaining] = useState<number>(0);
+  const [channelSupportStatuses, setChannelSupportStatuses] = useState<Record<string, SupportStatus>>({});
+  const [botLogs, setBotLogs] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem("kickerino.bot_logs");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
 
+  const sentGreetingsRef = useRef<Set<string>>(new Set());
+  const usedMessagesInBatchRef = useRef<Set<string>>(new Set());
+  const timeoutRef = useRef<number | null>(null);
+
+  // Sync state refs to prevent stale closures
   const channelsRef = useRef(channels);
   useEffect(() => {
     channelsRef.current = channels;
   }, [channels]);
 
-  // Redefine activeSupportSlugs: channels that should be supported (individual support or global support enabled)
+  const settingsRef = useRef(settings);
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
+  const batchQueueRef = useRef(batchQueue);
+  useEffect(() => {
+    batchQueueRef.current = batchQueue;
+  }, [batchQueue]);
+
+  // Derived active support slugs
   const activeSupportSlugs = channels
-    .filter((channel) => {
-      // Se o canal não estiver AO VIVO, nunca apoia
-      if (channel.status !== "live") {
-        return false;
-      }
-
-      // Se o apoio individual estiver explicitamente desativado, nunca apóia
-      if (channel.supportEnabled === false) {
-        return false;
-      }
-
-      // Se o apoio individual estiver explicitamente ativado no card e o canal estiver live, apoia
-      if (channel.supportEnabled === true) {
-        return true;
-      }
-
-      // Se o robô global estiver ativado e o canal estiver no estado padrão (undefined) e estiver live
-      if (settings.supportBotEnabled) {
-        return true;
-      }
-      return false;
-    })
+    .filter((channel) => channel.status === "live" && channel.supportEnabled === true)
     .map((channel) => channel.slug);
 
-  const activeSlugsSerialized = JSON.stringify(activeSupportSlugs);
+  const addLog = (
+    level: "INFO" | "SUCESSO" | "ERRO" | "COOLDOWN" | "INÍCIO" | "FIM",
+    message: string
+  ) => {
+    const ts = new Date().toLocaleTimeString();
+    const logLine = `[${ts}] [${level}] ${message}`;
+    setBotLogs((prev) => {
+      const next = [logLine, ...prev].slice(0, 500);
+      localStorage.setItem("kickerino.bot_logs", JSON.stringify(next));
+      return next;
+    });
+    void invoke("log_message", {
+      level: level.toLowerCase(),
+      message,
+      timestamp: ts,
+    }).catch(() => {});
+  };
+
+  const clearLogs = () => {
+    setBotLogs([]);
+    localStorage.removeItem("kickerino.bot_logs");
+  };
+
+  const handleChannelFinished = (slug: string, success: boolean, error?: string) => {
+    if (success) {
+      addLog("SUCESSO", `Mensagem enviada com sucesso para ${slug}.`);
+      setChannelSupportStatuses((prev) => ({ ...prev, [slug]: "sent" }));
+    } else {
+      addLog("ERRO", `Falha ao enviar mensagem para ${slug}: ${error || "Erro desconhecido"}`);
+      setChannelSupportStatuses((prev) => ({ ...prev, [slug]: "failed" }));
+    }
+
+    setCurrentSlug(null);
+
+    // If there are more channels in the queue, start the safety interval
+    if (batchQueueRef.current.length > 0) {
+      const delay = Math.floor(Math.random() * 11) + 20; // 20 to 30 seconds
+      addLog("INFO", `Aguardando intervalo de segurança de ${delay}s antes de prosseguir.`);
+      setIntervalRemaining(delay);
+    }
+  };
+
+  const handleTimeout = (slug: string) => {
+    void invoke("close_support_window", { slug }).catch(() => {});
+    handleChannelFinished(slug, false, "Timeout de 35s atingido");
+  };
+
+  const triggerBatchCycle = async () => {
+    // Avoid excess: check if own live is active
+    if (kickUsername) {
+      try {
+        const payload = await invoke<{ isLive: boolean }>("fetch_kick_channel", {
+          slug: kickUsername,
+        });
+        if (payload.isLive) {
+          addLog("INFO", `Ciclo suspenso: Sua live (${kickUsername}) está ativa (evitando excesso no chat).`);
+          const cdSecs = settingsRef.current.supportIntervalMinutes * 60;
+          setCooldownTime(cdSecs);
+          addLog("COOLDOWN", `Reiniciando cooldown de ${settingsRef.current.supportIntervalMinutes} minutos.`);
+          return;
+        }
+      } catch (err) {
+        console.error("Erro ao verificar status da própria live:", err);
+      }
+    }
+
+    const liveSupportSlugs = channelsRef.current
+      .filter((channel) => channel.status === "live" && channel.supportEnabled === true)
+      .map((channel) => channel.slug);
+
+    if (liveSupportSlugs.length === 0) {
+      addLog("INFO", "Nenhum canal online detectado para apoio neste ciclo.");
+      const cdSecs = settingsRef.current.supportIntervalMinutes * 60;
+      setCooldownTime(cdSecs);
+      addLog("COOLDOWN", `Reiniciando cooldown de ${settingsRef.current.supportIntervalMinutes} minutos.`);
+      return;
+    }
+
+    addLog("INÍCIO", `Iniciando ciclo de envios. Canais online selecionados: ${liveSupportSlugs.join(", ")}`);
+
+    // Reset unique messages list for this batch cycle
+    usedMessagesInBatchRef.current.clear();
+
+    const initialStatuses: Record<string, SupportStatus> = {};
+    for (const slug of liveSupportSlugs) {
+      initialStatuses[slug] = "pending";
+    }
+
+    setChannelSupportStatuses(initialStatuses);
+    setBatchQueue(liveSupportSlugs);
+    setIsBatchRunning(true);
+  };
+
+  const triggerManualMessage = async (slug: string) => {
+    addLog("INFO", `Disparo manual acionado para ${slug}.`);
+
+    if (currentSlug === slug) {
+      addLog("INFO", `Canal ${slug} já está sendo processado.`);
+      return;
+    }
+
+    setChannelSupportStatuses((prev) => ({ ...prev, [slug]: "pending" }));
+    setBatchQueue((prev) => {
+      const filtered = prev.filter((s) => s !== slug);
+      return [slug, ...filtered];
+    });
+
+    if (!isBatchRunning) {
+      setIsBatchRunning(true);
+    }
+  };
+
+  // Callback refs to prevent stale closures in events listener
+  const handleChannelFinishedRef = useRef(handleChannelFinished);
+  useEffect(() => {
+    handleChannelFinishedRef.current = handleChannelFinished;
+  });
 
   // Listen to window close events from Rust
   useEffect(() => {
@@ -248,9 +386,16 @@ export function useSupportBot({ channels, settings, setChannels }: SupportBotPar
       if (!active) return;
       const closedLabel = event.payload;
       if (closedLabel === "support-worker") {
-        isSendingRef.current = false;
-        setIsSendingState(false);
-        processingRef.current = null;
+        setCurrentSlug((current) => {
+          if (current) {
+            addLog("ERRO", `Janela fechada inesperadamente durante processamento de ${current}.`);
+            // Run finished logic inside timeout to let state settle
+            setTimeout(() => {
+              handleChannelFinishedRef.current(current, false, "Janela fechada pelo sistema ou usuário");
+            }, 0);
+          }
+          return null;
+        });
         if (timeoutRef.current) {
           window.clearTimeout(timeoutRef.current);
           timeoutRef.current = null;
@@ -264,22 +409,44 @@ export function useSupportBot({ channels, settings, setChannels }: SupportBotPar
     };
   }, []);
 
-  // Listen to support bot log events from Rust and forward to main console
+  // Listen to support bot log events from Rust
   useEffect(() => {
     let active = true;
 
     const unlistenPromise = listen<any>("support-log", (event) => {
       if (!active) return;
       const { level, message, timestamp } = event.payload;
-      const prefix = `[Robô de Apoio - ${timestamp}]`;
-      if (level === "error") {
-        console.error(prefix, message);
-      } else if (level === "warn") {
-        console.warn(prefix, message);
-      } else if (level === "success") {
-        console.log(`%c${prefix} %c${message}`, "color: #4caf50; font-weight: bold;", "color: inherit;");
+
+      if (level === "batch-success") {
+        if (timeoutRef.current) {
+          window.clearTimeout(timeoutRef.current);
+          timeoutRef.current = null;
+        }
+        handleChannelFinishedRef.current(message, true);
+      } else if (level === "batch-error") {
+        if (timeoutRef.current) {
+          window.clearTimeout(timeoutRef.current);
+          timeoutRef.current = null;
+        }
+        const index = message.indexOf("::");
+        if (index !== -1) {
+          const slug = message.slice(0, index);
+          const err = message.slice(index + 2);
+          handleChannelFinishedRef.current(slug, false, err);
+        } else {
+          handleChannelFinishedRef.current(message, false, "Erro desconhecido");
+        }
       } else {
-        console.log(prefix, message);
+        const prefix = `[Robô de Apoio - ${timestamp}]`;
+        if (level === "error") {
+          console.error(prefix, message);
+        } else if (level === "warn") {
+          console.warn(prefix, message);
+        } else if (level === "success") {
+          console.log(`%c${prefix} %c${message}`, "color: #4caf50; font-weight: bold;", "color: inherit;");
+        } else {
+          console.log(prefix, message);
+        }
       }
     });
 
@@ -289,133 +456,113 @@ export function useSupportBot({ channels, settings, setChannels }: SupportBotPar
     };
   }, []);
 
-  // Sync queue with active support slugs (remove inactive automatic items)
+  // Sync active support slugs greetings
   useEffect(() => {
-    setSendQueue((current) =>
-      current.filter((item) => item.isManual || activeSupportSlugs.includes(item.slug))
-    );
-
-    // Limpa os canais inativos do sentGreetingsRef
     const currentGreetings = sentGreetingsRef.current;
     for (const slug of Array.from(currentGreetings)) {
       if (!activeSupportSlugs.includes(slug)) {
         currentGreetings.delete(slug);
       }
     }
-  }, [activeSlugsSerialized]);
+  }, [JSON.stringify(activeSupportSlugs)]);
 
-  // Close windows if no channels are active and we are not sending manually
+  // Safety interval countdown loop
   useEffect(() => {
-    if (activeSupportSlugs.length === 0 && (!isSendingRef.current || !processingRef.current)) {
-      setSendQueue([]);
-      isSendingRef.current = false;
-      setIsSendingState(false);
-      processingRef.current = null;
-      if (timeoutRef.current) {
-        window.clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-      }
-      void invoke("close_all_support_windows").catch(() => {});
-    }
-  }, [activeSupportSlugs.length]);
+    if (intervalRemaining <= 0) return;
+    const t = setTimeout(() => {
+      setIntervalRemaining((prev) => prev - 1);
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [intervalRemaining]);
 
-  // Queue worker effect
+  // Queue processing logic
   useEffect(() => {
-    if (isSendingRef.current || processingRef.current || sendQueue.length === 0) {
+    if (!isBatchRunning || currentSlug !== null || batchQueue.length === 0 || intervalRemaining > 0) {
       return;
     }
 
-    const nextItem = sendQueue[0];
-    const nextSlug = nextItem.slug;
-    const isManual = nextItem.isManual;
-
-    // Verify channel exists in our list and is eligible to send
-    const channel = channelsRef.current.find((c) => c.slug === nextSlug);
-    if (!channel) {
-      setSendQueue((q) => q.slice(1));
-      return;
-    }
-
-    // Se o canal não estiver AO VIVO, descarta o envio de qualquer maneira (previne envio offline)
-    if (channel.status !== "live") {
-      setSendQueue((q) => q.slice(1));
-      return;
-    }
-
-    if (!isManual) {
-      // Se o apoio individual estiver explicitamente desativado, descarta
-      if (channel.supportEnabled === false) {
-        setSendQueue((q) => q.slice(1));
-        return;
-      }
-
-      // Se o apoio individual estiver explicitamente ativado (verde no card), aceita o envio
-      const isIndividuallySupported = channel.supportEnabled === true;
-
-      // Se estiver no estado padrão (undefined) e o robô global estiver ligado, valida
-      const isGloballySupported = settings.supportBotEnabled;
-
-      if (!isIndividuallySupported && !isGloballySupported) {
-        setSendQueue((q) => q.slice(1));
-        return;
-      }
-    }
-
-    // Dequeue and mark as sending (using processingRef for immediate synchronous guard)
-    processingRef.current = nextSlug;
-    isSendingRef.current = true;
-    setIsSendingState(true);
-    setSendQueue((q) => q.slice(1));
+    const nextSlug = batchQueue[0];
+    setBatchQueue((prev) => prev.slice(1));
+    setCurrentSlug(nextSlug);
 
     const runWorker = async () => {
-      let chatroomId = channel.chatroomId;
+      const channel = channelsRef.current.find((c) => c.slug === nextSlug);
+      if (!channel || channel.status !== "live") {
+        addLog("INFO", `Ignorando ${nextSlug} pois não está online.`);
+        setChannelSupportStatuses((prev) => ({ ...prev, [nextSlug]: "failed" }));
+        setCurrentSlug(null);
+        return;
+      }
 
+      if (channel.supportEnabled !== true) {
+        addLog("INFO", `Ignorando ${nextSlug} pois o apoio individual não está ativado.`);
+        setChannelSupportStatuses((prev) => ({ ...prev, [nextSlug]: "failed" }));
+        setCurrentSlug(null);
+        return;
+      }
+
+      addLog("INFO", `Iniciando envio para ${nextSlug}...`);
+      setChannelSupportStatuses((prev) => ({ ...prev, [nextSlug]: "sending" }));
+
+      let chatroomId = channel.chatroomId;
       if (!chatroomId) {
-        console.log(`[useSupportBot] Chatroom ID ausente para ${nextSlug}. Buscando via API Rust...`);
         try {
           const payload = await invoke<{ chatroomId?: number }>("fetch_kick_channel", {
             slug: nextSlug,
           });
           chatroomId = payload.chatroomId;
         } catch (err) {
-          console.error(`[useSupportBot] Erro ao obter Chatroom ID para ${nextSlug}:`, err);
+          addLog("ERRO", `Erro ao obter chatroomId para ${nextSlug}.`);
         }
       }
 
       if (!chatroomId) {
-        console.error(`[useSupportBot] Nao foi possivel obter o Chatroom ID para ${nextSlug}. Abortando envio.`);
-        processingRef.current = null;
-        isSendingRef.current = false;
-        setIsSendingState(false);
+        addLog("ERRO", `Chatroom ID ausente para ${nextSlug}. abortando.`);
+        handleChannelFinished(nextSlug, false, "Chatroom ID ausente");
         return;
       }
 
       let messagesToSend: string[] = [];
-
-      if (settings.useGlobalHumanMessages) {
+      if (settingsRef.current.useGlobalHumanMessages) {
         const hasSentGreeting = sentGreetingsRef.current.has(nextSlug);
-        const greetingTpl = settings.greetingTemplate || "Salve {channel}, bora que bora!";
-        const humanMsgs = settings.globalSupportMessages && settings.globalSupportMessages.length > 0
-          ? settings.globalSupportMessages
+        const greetingTpl = settingsRef.current.greetingTemplate || "Salve {channel}, bora que bora!";
+        const humanMsgs = settingsRef.current.globalSupportMessages && settingsRef.current.globalSupportMessages.length > 0
+          ? settingsRef.current.globalSupportMessages
           : ["No apoio!"];
         const displayCh = channel.username || nextSlug;
 
         if (!hasSentGreeting) {
-          // Envia a saudação inicial baseada no template
           const h = new Date().getHours();
-          const timeOfDay = h < 12 ? 'Bom dia' : (h < 18 ? 'Boa tarde' : 'Boa noite');
-          const days = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
-          
-          const greeting = greetingTpl
+          const timeOfDay = h < 12 ? "Bom dia" : h < 18 ? "Boa tarde" : "Boa noite";
+          const days = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+          let greeting = greetingTpl
             .replace(/{timeOfDay}/g, timeOfDay)
             .replace(/{channel}/g, displayCh)
             .replace(/{dayOfWeek}/g, days[new Date().getDay()]);
-            
+          
+          // Force channel name inclusion
+          if (!greeting.includes(displayCh)) {
+            greeting = greeting + " (" + displayCh + ")";
+          }
           messagesToSend = [greeting];
           sentGreetingsRef.current.add(nextSlug);
         } else {
-          // Envia frase de apoio aleatória
-          const randomRaw = humanMsgs[Math.floor(Math.random() * humanMsgs.length)];
+          // Select a unique message for this cycle
+          const unusedMsgs = humanMsgs.filter((msg) => !usedMessagesInBatchRef.current.has(msg));
+          const listToPick = unusedMsgs.length > 0 ? unusedMsgs : humanMsgs;
+          
+          if (unusedMsgs.length === 0) {
+            usedMessagesInBatchRef.current.clear();
+          }
+
+          let randomRaw = listToPick[Math.floor(Math.random() * listToPick.length)];
+          usedMessagesInBatchRef.current.add(randomRaw);
+
+          // Force channel name inclusion
+          if (!randomRaw.includes("{channel}")) {
+            randomRaw = randomRaw + ", {channel}!";
+          }
+
           const randomMsg = randomRaw.replace(/{channel}/g, displayCh);
           messagesToSend = [randomMsg];
         }
@@ -430,8 +577,6 @@ export function useSupportBot({ channels, settings, setChannels }: SupportBotPar
         } else if (supportConfig.rotateMessages) {
           const nextIdx = supportConfig.nextMessageIndex || 0;
           messagesToSend = [rawMessages[nextIdx % rawMessages.length]];
-
-          // Increment nextMessageIndex in react state/localStorage
           const nextNextIdx = (nextIdx + 1) % rawMessages.length;
           setChannels((prev) =>
             prev.map((c) =>
@@ -446,186 +591,115 @@ export function useSupportBot({ channels, settings, setChannels }: SupportBotPar
             )
           );
         } else {
-          // Envia apenas a primeira mensagem da lista (modo de envio unitário simples)
           messagesToSend = [rawMessages[0]];
         }
       }
 
       const allSlugs = channelsRef.current.map((c) => c.slug);
-      
       let resolvedEmoteMap: Record<string, string> = {};
       try {
-        console.log(`[useSupportBot] Buscando emotes via Rust para os canais...`);
         resolvedEmoteMap = await invoke<Record<string, string>>("fetch_channels_emotes", {
           slugs: allSlugs,
         });
-        console.log(`[useSupportBot] ${Object.keys(resolvedEmoteMap).length} emotes carregados via Rust.`);
       } catch (err) {
-        console.error(`[useSupportBot] Falha ao obter emotes via Rust:`, err);
+        console.error("Falha ao obter emotes:", err);
       }
 
       const js_script = buildSupportScript(
         nextSlug,
         chatroomId,
         messagesToSend,
-        true, // Always enforce quality
-        settings.supportPreferredQuality,
-        settings.supportQualityCheckSeconds,
+        true,
+        settingsRef.current.supportPreferredQuality,
+        settingsRef.current.supportQualityCheckSeconds,
         allSlugs,
         resolvedEmoteMap
       );
 
-      console.log(`[useSupportBot] Iniciando envio de mensagem para ${nextSlug} com chatroomId ${chatroomId}`);
-
       try {
-        await invoke("open_support_window", { slug: nextSlug, jsScript: js_script });
         if (timeoutRef.current) {
           window.clearTimeout(timeoutRef.current);
         }
         timeoutRef.current = window.setTimeout(() => {
           timeoutRef.current = null;
-          invoke("close_support_window", { slug: nextSlug })
-            .catch((err) => console.error(`[Kickerino] Erro ao fechar janela para ${nextSlug}:`, err))
-            .finally(() => {
-              processingRef.current = null;
-              isSendingRef.current = false;
-              setIsSendingState(false);
-            });
-        }, 20000);
+          handleTimeout(nextSlug);
+        }, 35000);
+
+        await invoke("open_support_window", { slug: nextSlug, jsScript: js_script });
       } catch (err) {
-        console.error(`[Kickerino] Falha ao abrir janela para ${nextSlug}:`, err);
-        processingRef.current = null;
-        isSendingRef.current = false;
-        setIsSendingState(false);
+        addLog("ERRO", `Falha ao abrir webview para ${nextSlug}: ${err}`);
+        handleChannelFinished(nextSlug, false, String(err));
       }
     };
 
     void runWorker();
-  }, [
-    sendQueue,
-    activeSupportSlugs.length,
-    settings.supportPreferredQuality,
-    settings.supportQualityCheckSeconds,
-    settings.supportBotEnabled,
-    setChannels,
-  ]);
+  }, [isBatchRunning, currentSlug, batchQueue, intervalRemaining]);
 
-  // Countdown timer loop
+  // Batch completion observer
   useEffect(() => {
-    const slugs = activeSupportSlugs;
-    if (slugs.length === 0) {
-      setSupportTimers({});
+    if (isBatchRunning && currentSlug === null && batchQueue.length === 0 && intervalRemaining <= 0) {
+      setIsBatchRunning(false);
+      addLog("FIM", "Ciclo de envios finalizado para os canais online.");
+      const cdSecs = settingsRef.current.supportIntervalMinutes * 60;
+      setCooldownTime(cdSecs);
+      addLog("COOLDOWN", `Entrando em cooldown de ${settingsRef.current.supportIntervalMinutes} minutos.`);
+    }
+  }, [isBatchRunning, currentSlug, batchQueue.length, intervalRemaining]);
+
+  // Cooldown countdown loop
+  useEffect(() => {
+    if (!settings.supportBotEnabled) {
+      setCooldownTime(0);
       return;
     }
 
-    // Update keys in timers record based on active support slugs
-    setSupportTimers((prev) => {
-      const next = { ...prev };
-      let changed = false;
-
-      // Add timer for new slugs
-      for (const slug of slugs) {
-        if (next[slug] === undefined) {
-          next[slug] = 5; // 5s startup delay
-          changed = true;
-        }
-      }
-
-      // Remove timers for inactive slugs
-      for (const slug of Object.keys(next)) {
-        if (!slugs.includes(slug)) {
-          delete next[slug];
-          changed = true;
-        }
-      }
-
-      return changed ? next : prev;
-    });
+    if (cooldownTime <= 0) {
+      return;
+    }
 
     const interval = setInterval(() => {
-      setSupportTimers((prev) => {
-        const next = { ...prev };
-        let changed = false;
-        const slugsToQueue: string[] = [];
-
-        for (const slug of Object.keys(next)) {
-          const channel = channelsRef.current.find((c) => c.slug === slug);
-          const intervalMinutes = channel?.supportConfig?.intervalMinutes ?? settings.supportIntervalMinutes;
-          const maxSecs = intervalMinutes * 60;
-
-          // Clamp timer value if it exceeds the new limit (e.g. settings changed)
-          if (next[slug] > maxSecs && next[slug] > 5) {
-            next[slug] = maxSecs;
-            changed = true;
-          }
-
-          if (next[slug] > 0) {
-            next[slug] = next[slug] - 1;
-            changed = true;
-            if (next[slug] === 0) {
-              slugsToQueue.push(slug);
-            }
-          } else {
-            next[slug] = maxSecs;
-            changed = true;
-          }
+      setCooldownTime((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          void triggerBatchCycle();
+          return 0;
         }
-
-        if (slugsToQueue.length > 0) {
-          setTimeout(() => {
-            setSendQueue((q) => {
-              const nextQ = [...q];
-              for (const s of slugsToQueue) {
-                if (!nextQ.some((item) => item.slug === s)) {
-                  nextQ.push({ slug: s, isManual: false });
-                }
-              }
-              return nextQ;
-            });
-          }, 0);
-        }
-
-        return changed ? next : prev;
+        return prev - 1;
       });
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [activeSlugsSerialized, settings.supportIntervalMinutes]);
+  }, [cooldownTime, settings.supportBotEnabled]);
 
-  // Cleanup on unmount
+  // Global bot enabled/disabled observer
   useEffect(() => {
-    return () => {
+    if (settings.supportBotEnabled) {
+      addLog("INFO", "Iniciando robô geral...");
+      void triggerBatchCycle();
+    } else {
+      setIsBatchRunning(false);
+      setBatchQueue([]);
+      setCurrentSlug(null);
+      setCooldownTime(0);
+      setIntervalRemaining(0);
+      setChannelSupportStatuses({});
       if (timeoutRef.current) {
         window.clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
       }
       void invoke("close_all_support_windows").catch(() => {});
-    };
-  }, []);
-
-  const triggerManualMessage = async (slug: string) => {
-    // Reset the timer for this slug in React back to the interval
-    setSupportTimers((prev) => {
-      if (prev[slug] !== undefined) {
-        const channel = channelsRef.current.find((c) => c.slug === slug);
-        const intervalMinutes = channel?.supportConfig?.intervalMinutes ?? settings.supportIntervalMinutes;
-        return {
-          ...prev,
-          [slug]: intervalMinutes * 60,
-        };
-      }
-      return prev;
-    });
-
-    // Add to the front of sendQueue so it sends next with isManual = true
-    setSendQueue((q) => {
-      const filtered = q.filter((item) => item.slug !== slug);
-      return [{ slug, isManual: true }, ...filtered];
-    });
-  };
+    }
+  }, [settings.supportBotEnabled]);
 
   return {
+    isBatchRunning,
+    currentSlug,
+    cooldownTime,
+    intervalRemaining,
+    channelSupportStatuses,
+    botLogs,
+    clearLogs,
     activeSupportSlugs,
-    supportTimers,
     triggerManualMessage,
   };
 }
