@@ -1,6 +1,6 @@
 [package]
 name = "kickerino"
-version = "0.9.9-17"
+version = "0.9.9-18"
 description = "Cliente desktop leve para acompanhar canais da Kick."
 authors = ["athilalexandre"]
 edition = "2021"
