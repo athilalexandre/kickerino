@@ -1,0 +1,6 @@
+[[permission]]
+identifier = "allow-log-message"
+description = "Permite registrar mensagens de log"
+
+[[permission.allow]]
+commands = ["log_message"]

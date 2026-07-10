@@ -9,5 +9,8 @@
       "https://*.kick.com/*"
     ]
   },
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "allow-log-message"
+  ]
 }
