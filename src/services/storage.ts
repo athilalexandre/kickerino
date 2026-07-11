@@ -15,7 +15,7 @@ export const defaultSettings: AppSettings = {
   supportPreferredQuality: "160p",
   supportQualityCheckSeconds: 60,
   useGlobalHumanMessages: true,
-  greetingTemplate: "Salve {channel}, bora que bora!",
+  supportJitterPercentage: 15,
   globalSupportMessages: [
     "Boa live, {channel}! Passando pra deixar aquele apoio de sempre.",
     "Tamo junto, {channel}! Que a stream de hoje seja leve e divertida.",

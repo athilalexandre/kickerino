@@ -14,6 +14,7 @@ type ChannelListProps = {
   onSelect: (slug: string) => void;
   activeSupportSlugs: string[];
   channelSupportStatuses?: Record<string, "pending" | "sending" | "sent" | "failed">;
+  channelCooldowns?: Record<string, number>;
 };
 
 export function ChannelList({
@@ -25,6 +26,7 @@ export function ChannelList({
   onSelect,
   activeSupportSlugs,
   channelSupportStatuses = {},
+  channelCooldowns = {},
 }: ChannelListProps) {
   const [draft, setDraft] = useState("");
 
@@ -74,33 +76,66 @@ export function ChannelList({
               <ChannelAvatar src={channel.avatarUrl} name={displayName} />
               <span className="sidebar-row__name">{displayName}</span>
               <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                {isSupported && sendingStatus && (
-                  <span 
-                    title={`Status de envio: ${sendingStatus}`} 
-                    style={{ 
-                      display: "inline-flex", 
-                      alignItems: "center", 
-                      gap: "3px",
-                      fontSize: "10px",
-                      color: sendingStatus === "sent" ? "#42c773" : 
-                             sendingStatus === "failed" ? "#dc5d57" :
-                             sendingStatus === "sending" ? "#3b82f6" : "#8fa1a8",
-                      fontWeight: "bold",
-                      background: sendingStatus === "sent" ? "rgba(66, 199, 115, 0.1)" :
-                                  sendingStatus === "failed" ? "rgba(220, 93, 87, 0.1)" :
-                                  sendingStatus === "sending" ? "rgba(59, 130, 246, 0.1)" : "rgba(143, 161, 168, 0.1)",
-                      padding: "1px 4px",
-                      borderRadius: "3px"
-                    }}
-                  >
-                    <Bot size={11} />
-                    <span>
-                      {sendingStatus === "sent" ? "Enviado" :
-                       sendingStatus === "failed" ? "Falhou" :
-                       sendingStatus === "sending" ? "Env..." : "Pend."}
+                {isSupported && (() => {
+                  const hasCooldown = channelCooldowns[channel.slug] !== undefined && channelCooldowns[channel.slug] > 0;
+                  let badgeColor = "#3b82f6"; // Pendente (Azul)
+                  let badgeBg = "rgba(59, 130, 246, 0.1)";
+
+                  if (sendingStatus === "sending") {
+                    badgeColor = "#3b82f6"; // Azul
+                    badgeBg = "rgba(59, 130, 246, 0.1)";
+                  } else if (hasCooldown) {
+                    if (sendingStatus === "failed") {
+                      badgeColor = "#dc5d57"; // Vermelho
+                      badgeBg = "rgba(220, 93, 87, 0.1)";
+                    } else if (sendingStatus === "sent") {
+                      badgeColor = "#eab308"; // Amarelo (Em Fila)
+                      badgeBg = "rgba(234, 179, 8, 0.1)";
+                    } else {
+                      badgeColor = "#3b82f6"; // Azul (Pendente)
+                      badgeBg = "rgba(59, 130, 246, 0.1)";
+                    }
+                  } else {
+                    if (sendingStatus === "sent") {
+                      badgeColor = "#42c773"; // Verde (Enviada)
+                      badgeBg = "rgba(66, 199, 115, 0.1)";
+                    } else if (sendingStatus === "failed") {
+                      badgeColor = "#dc5d57"; // Vermelho
+                      badgeBg = "rgba(220, 93, 87, 0.1)";
+                    } else {
+                      badgeColor = "#3b82f6"; // Azul (Pendente)
+                      badgeBg = "rgba(59, 130, 246, 0.1)";
+                    }
+                  }
+
+                  let text = "Pend.";
+                  if (sendingStatus === "sending") text = "Env...";
+                  else if (hasCooldown) {
+                    text = sendingStatus === "sent" ? "Fila" : sendingStatus === "failed" ? "Falhou" : "Pend.";
+                  } else {
+                    text = sendingStatus === "sent" ? "Enviado" : sendingStatus === "failed" ? "Falhou" : "Pend.";
+                  }
+
+                  return (
+                    <span 
+                      title={`Status de envio: ${sendingStatus || "pending"}`} 
+                      style={{ 
+                        display: "inline-flex", 
+                        alignItems: "center", 
+                        gap: "3px",
+                        fontSize: "10px",
+                        color: badgeColor,
+                        fontWeight: "bold",
+                        background: badgeBg,
+                        padding: "1px 4px",
+                        borderRadius: "5px"
+                      }}
+                    >
+                      <Bot size={11} />
+                      <span>{text}</span>
                     </span>
-                  </span>
-                )}
+                  );
+                })()}
                 <StatusBadge status={channel.status} />
               </span>
             </button>

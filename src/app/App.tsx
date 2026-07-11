@@ -59,6 +59,7 @@ export function App() {
     clearLogs,
     activeSupportSlugs,
     triggerManualMessage,
+    channelCooldowns,
   } = useSupportBot({
     channels,
     settings,
@@ -416,6 +417,7 @@ export function App() {
               onSelect={setSelectedSlug}
               activeSupportSlugs={activeSupportSlugs}
               channelSupportStatuses={channelSupportStatuses}
+              channelCooldowns={channelCooldowns}
             />
 
             <section className="content">
@@ -466,6 +468,7 @@ export function App() {
                       onToggleSupport={toggleChannelSupport}
                       onUpdateSupportConfig={updateChannelSupportConfig}
                       globalIntervalMinutes={settings.supportIntervalMinutes}
+                      cooldownSeconds={channelCooldowns[channel.slug]}
                     />
                   ))}
                 </div>

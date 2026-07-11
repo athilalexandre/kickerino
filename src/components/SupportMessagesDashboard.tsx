@@ -16,12 +16,14 @@ export function SupportMessagesDashboard({
   onClearLogs,
 }: SupportMessagesDashboardProps) {
   const [useGlobal, setUseGlobal] = useState(settings.useGlobalHumanMessages);
-  const [greeting, setGreeting] = useState(settings.greetingTemplate);
+
   const [cooldown, setCooldown] = useState(settings.supportIntervalMinutes);
+  const [jitter, setJitter] = useState(settings.supportJitterPercentage ?? 15);
   const [messagesText, setMessagesText] = useState(() =>
     (settings.globalSupportMessages || []).join("\n")
   );
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [logsCollapsed, setLogsCollapsed] = useState(true);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,9 +35,10 @@ export function SupportMessagesDashboard({
     onChange({
       ...settings,
       useGlobalHumanMessages: useGlobal,
-      greetingTemplate: greeting.trim(),
+
       globalSupportMessages: parsedMessages,
       supportIntervalMinutes: cooldown,
+      supportJitterPercentage: jitter,
     });
 
     setSaveSuccess(true);
@@ -44,8 +47,9 @@ export function SupportMessagesDashboard({
 
   const handleReset = () => {
     setUseGlobal(true);
-    setGreeting("Salve {channel}, bora que bora!");
+
     setCooldown(10);
+    setJitter(15);
     setMessagesText([
       "Boa live, {channel}! Passando pra deixar aquele apoio de sempre.",
       "Tamo junto, {channel}! Que a stream de hoje seja leve e divertida.",
@@ -206,30 +210,7 @@ export function SupportMessagesDashboard({
         
         {/* Lado Esquerdo: Saudação Inicial, Cooldown e Ajuda */}
         <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-          <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            <label style={{ fontWeight: "600", color: "#f6fafb", display: "flex", alignItems: "center", gap: "6px" }}>
-              Mensagem de Saudação Inicial
-            </label>
-            <span style={{ fontSize: "12px", color: "#8fa1a8" }}>
-              Enviada automaticamente quando o robô detecta que a live entrou ao vivo pela primeira vez.
-            </span>
-            <input
-              type="text"
-              disabled={!useGlobal}
-              value={greeting}
-              onChange={(e) => setGreeting(e.target.value)}
-              style={{
-                width: "100%",
-                height: "38px",
-                padding: "0 12px",
-                border: "1px solid #2a3338",
-                borderRadius: "6px",
-                color: "#edf4f6",
-                background: "#101417",
-                outline: "none"
-              }}
-            />
-          </div>
+
 
           <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
             <label style={{ fontWeight: "600", color: "#f6fafb", display: "flex", alignItems: "center", gap: "6px" }}>
@@ -254,6 +235,35 @@ export function SupportMessagesDashboard({
                 outline: "none"
               }}
             />
+          </div>
+
+          <div className="form-group" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            <label style={{ fontWeight: "600", color: "#f6fafb", display: "flex", alignItems: "center", gap: "6px" }}>
+              Variação de Intervalo (Jitter)
+            </label>
+            <span style={{ fontSize: "12px", color: "#8fa1a8" }}>
+              Porcentagem de variação randômica para cima ou para baixo nos tempos de envio (ex: 20% em 20min varia entre 16 e 24 minutos).
+            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={jitter}
+                onChange={(e) => setJitter(Math.max(0, Math.min(100, Number(e.target.value))))}
+                style={{
+                  width: "100px",
+                  height: "38px",
+                  padding: "0 12px",
+                  border: "1px solid #2a3338",
+                  borderRadius: "6px",
+                  color: "#edf4f6",
+                  background: "#101417",
+                  outline: "none"
+                }}
+              />
+              <span style={{ color: "#edf4f6", fontSize: "14px", fontWeight: "bold" }}>%</span>
+            </div>
           </div>
 
           <div style={{
@@ -359,6 +369,14 @@ export function SupportMessagesDashboard({
             <button
               type="button"
               className="btn btn--secondary"
+              onClick={() => setLogsCollapsed(!logsCollapsed)}
+              style={{ padding: "4px 10px", fontSize: "12px", height: "30px" }}
+            >
+              {logsCollapsed ? "Mostrar Logs" : "Ocultar Logs"}
+            </button>
+            <button
+              type="button"
+              className="btn btn--secondary"
               onClick={handleDownloadLogs}
               disabled={!logs || logs.length === 0}
               style={{ padding: "4px 10px", fontSize: "12px", height: "30px" }}
@@ -377,41 +395,43 @@ export function SupportMessagesDashboard({
           </div>
         </div>
 
-        <div style={{
-          height: "200px",
-          background: "#0a0d0f",
-          border: "1px solid #242b30",
-          borderRadius: "6px",
-          padding: "12px",
-          fontFamily: "monospace",
-          fontSize: "12px",
-          color: "#b5c8cf",
-          overflowY: "auto",
-          display: "flex",
-          flexDirection: "column",
-          gap: "4px",
-          whiteSpace: "pre-wrap"
-        }}>
-          {logs && logs.length > 0 ? (
-            logs.map((log, index) => {
-              let color = "#b5c8cf";
-              if (log.includes("[SUCESSO]")) color = "#75e39b";
-              else if (log.includes("[ERRO]")) color = "#dc5d57";
-              else if (log.includes("[INÍCIO]") || log.includes("[FIM]")) color = "#3b82f6";
-              else if (log.includes("[COOLDOWN]")) color = "#f59e0b";
+        {!logsCollapsed && (
+          <div style={{
+            height: "200px",
+            background: "#0a0d0f",
+            border: "1px solid #242b30",
+            borderRadius: "6px",
+            padding: "12px",
+            fontFamily: "monospace",
+            fontSize: "12px",
+            color: "#b5c8cf",
+            overflowY: "auto",
+            display: "flex",
+            flexDirection: "column",
+            gap: "4px",
+            whiteSpace: "pre-wrap"
+          }}>
+            {logs && logs.length > 0 ? (
+              logs.map((log, index) => {
+                let color = "#b5c8cf";
+                if (log.includes("[SUCESSO]")) color = "#75e39b";
+                else if (log.includes("[ERRO]")) color = "#dc5d57";
+                else if (log.includes("[INÍCIO]") || log.includes("[FIM]")) color = "#3b82f6";
+                else if (log.includes("[COOLDOWN]")) color = "#f59e0b";
 
-              return (
-                <div key={index} style={{ color }}>
-                  {log}
-                </div>
-              );
-            })
-          ) : (
-            <div style={{ color: "#54666d", fontStyle: "italic", textAlign: "center", marginTop: "80px" }}>
-              Nenhum log registrado ainda. Ligue o robô geral para iniciar a execução.
-            </div>
-          )}
-        </div>
+                return (
+                  <div key={index} style={{ color }}>
+                    {log}
+                  </div>
+                );
+              })
+            ) : (
+              <div style={{ color: "#54666d", fontStyle: "italic", textAlign: "center", marginTop: "80px" }}>
+                Nenhum log registrado ainda. Ligue o robô geral para iniciar a execução.
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

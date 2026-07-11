@@ -9,7 +9,7 @@ export type AppSettings = {
   supportPreferredQuality: string;
   supportQualityCheckSeconds: number;
   useGlobalHumanMessages: boolean;
-  greetingTemplate: string;
+  supportJitterPercentage: number;
   globalSupportMessages: string[];
 };
 

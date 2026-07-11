@@ -1,9 +1,7 @@
 [[permission]]
 identifier = "allow-kickerino-commands"
 description = "Permite a execucao de todos os comandos do Kickerino no frontend"
-
-[[permission.allow]]
-commands = [
+commands.allow = [
   "app_version",
   "fetch_kick_channel",
   "fetch_latest_release",

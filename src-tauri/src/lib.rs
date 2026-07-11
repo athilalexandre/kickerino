@@ -909,9 +909,31 @@ async fn check_kick_relationships(
                 }}
             }}
 
+            function getCookie(name) {{
+                const value = "; " + document.cookie;
+                const parts = value.split("; " + name + "=");
+                if (parts.length === 2) return decodeURIComponent(parts.pop().split(";").shift());
+                return null;
+            }}
+
             async function runCheck() {{
                 tauriLog("info", "Iniciando verificacao de relacionamentos no webview...");
                 await new Promise(r => setTimeout(r, 2000));
+                
+                const sessionToken = getCookie('session_token') || '';
+                const xsrfToken = getCookie('XSRF-TOKEN') || '';
+
+                const requestHeaders = {{
+                    'Content-Type': 'application/json'
+                }};
+
+                if (sessionToken) {{
+                    requestHeaders['Authorization'] = 'Bearer ' + sessionToken;
+                }}
+
+                if (xsrfToken) {{
+                    requestHeaders['X-XSRF-Token'] = xsrfToken;
+                }}
                 
                 const ourChannel = "{}";
                 const usernames = {};
@@ -925,7 +947,9 @@ async fn check_kick_relationships(
                     try {{
                         const url = `https://kick.com/api/v2/channels/${{ourChannel}}/users/${{username}}`;
                         tauriLog("info", "Consultando endpoint: " + url);
-                        const res = await fetch(url);
+                        const res = await fetch(url, {{
+                            headers: requestHeaders
+                        }});
                         tauriLog("info", "Status da resposta para " + username + ": " + res.status);
                         if (res.ok) {{
                             const data = await res.json();
@@ -964,7 +988,7 @@ async fn check_kick_relationships(
     .title("Relationship Checker")
     .inner_size(300.0, 300.0)
     .position(-3000.0, -3000.0)
-    .visible(true)
+    .visible(false)
     .decorations(false)
     .skip_taskbar(true)
     .initialization_script(&js_script);

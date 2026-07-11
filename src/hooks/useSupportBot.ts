@@ -226,6 +226,7 @@ export function useSupportBot({ channels, settings, setChannels, kickUsername }:
   const [cooldownTime, setCooldownTime] = useState<number>(0);
   const [intervalRemaining, setIntervalRemaining] = useState<number>(0);
   const [channelSupportStatuses, setChannelSupportStatuses] = useState<Record<string, SupportStatus>>({});
+  const [channelCooldowns, setChannelCooldowns] = useState<Record<string, number>>({});
   const [botLogs, setBotLogs] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem("kickerino.bot_logs");
@@ -235,9 +236,10 @@ export function useSupportBot({ channels, settings, setChannels, kickUsername }:
     }
   });
 
-  const sentGreetingsRef = useRef<Set<string>>(new Set());
+
   const usedMessagesInBatchRef = useRef<Set<string>>(new Set());
   const timeoutRef = useRef<number | null>(null);
+  const ignoringCloseRef = useRef(false);
 
   // Sync state refs to prevent stale closures
   const channelsRef = useRef(channels);
@@ -283,6 +285,20 @@ export function useSupportBot({ channels, settings, setChannels, kickUsername }:
     localStorage.removeItem("kickerino.bot_logs");
   };
 
+  const calculateJitteredCooldown = (baseMinutes: number): number => {
+    const baseSeconds = baseMinutes * 60;
+    const jitterPercent = settingsRef.current.supportJitterPercentage ?? 15;
+    if (jitterPercent <= 0) return baseSeconds;
+
+    const maxVariation = baseSeconds * (jitterPercent / 100);
+    const randomFactor = Math.random() * 2 - 1; // Random between -1 and 1
+    const variation = randomFactor * maxVariation;
+    const finalCooldown = Math.max(10, Math.round(baseSeconds + variation));
+    
+    addLog("INFO", `[Timer] Cooldown com Jitter: Base ${baseMinutes}min (${baseSeconds}s) | Variação de ${jitterPercent}% | Tempo final: ${finalCooldown}s (${Math.round(finalCooldown/60 * 10) / 10}min).`);
+    return finalCooldown;
+  };
+
   const handleChannelFinished = (slug: string, success: boolean, error?: string) => {
     if (success) {
       addLog("SUCESSO", `Mensagem enviada com sucesso para ${slug}.`);
@@ -293,6 +309,15 @@ export function useSupportBot({ channels, settings, setChannels, kickUsername }:
     }
 
     setCurrentSlug(null);
+
+    // Reset individual cooldown for this channel!
+    const channel = channelsRef.current.find((c) => c.slug === slug);
+    const intervalMinutes = channel?.supportConfig?.intervalMinutes ?? settingsRef.current.supportIntervalMinutes;
+    const nextCd = calculateJitteredCooldown(intervalMinutes);
+    setChannelCooldowns((prev) => ({
+      ...prev,
+      [slug]: nextCd,
+    }));
 
     // If there are more channels in the queue, start the safety interval
     if (batchQueueRef.current.length > 0) {
@@ -307,6 +332,20 @@ export function useSupportBot({ channels, settings, setChannels, kickUsername }:
     handleChannelFinished(slug, false, "Timeout de 35s atingido");
   };
 
+  const triggerChannelSupport = async (slug: string) => {
+    if (currentSlug === slug) return;
+
+    setChannelSupportStatuses((prev) => ({ ...prev, [slug]: "pending" }));
+    setBatchQueue((prev) => {
+      if (prev.includes(slug)) return prev;
+      return [...prev, slug];
+    });
+
+    if (!isBatchRunning) {
+      setIsBatchRunning(true);
+    }
+  };
+
   const triggerBatchCycle = async () => {
     // Avoid excess: check if own live is active
     if (kickUsername) {
@@ -316,9 +355,6 @@ export function useSupportBot({ channels, settings, setChannels, kickUsername }:
         });
         if (payload.isLive) {
           addLog("INFO", `Ciclo suspenso: Sua live (${kickUsername}) está ativa (evitando excesso no chat).`);
-          const cdSecs = settingsRef.current.supportIntervalMinutes * 60;
-          setCooldownTime(cdSecs);
-          addLog("COOLDOWN", `Reiniciando cooldown de ${settingsRef.current.supportIntervalMinutes} minutos.`);
           return;
         }
       } catch (err) {
@@ -331,25 +367,25 @@ export function useSupportBot({ channels, settings, setChannels, kickUsername }:
       .map((channel) => channel.slug);
 
     if (liveSupportSlugs.length === 0) {
-      addLog("INFO", "Nenhum canal online detectado para apoio neste ciclo.");
-      const cdSecs = settingsRef.current.supportIntervalMinutes * 60;
-      setCooldownTime(cdSecs);
-      addLog("COOLDOWN", `Reiniciando cooldown de ${settingsRef.current.supportIntervalMinutes} minutos.`);
+      addLog("INFO", "Nenhum canal online detectado para apoio.");
       return;
     }
 
-    addLog("INÍCIO", `Iniciando ciclo de envios. Canais online selecionados: ${liveSupportSlugs.join(", ")}`);
+    addLog("INÍCIO", `Iniciando robô de apoio para canais online: ${liveSupportSlugs.join(", ")}`);
 
-    // Reset unique messages list for this batch cycle
+    // Reset unique messages list
     usedMessagesInBatchRef.current.clear();
 
     const initialStatuses: Record<string, SupportStatus> = {};
+    const initialCooldowns: Record<string, number> = {};
     for (const slug of liveSupportSlugs) {
       initialStatuses[slug] = "pending";
+      // Initialize with 5 seconds delay so they start soon
+      initialCooldowns[slug] = 5;
     }
 
     setChannelSupportStatuses(initialStatuses);
-    setBatchQueue(liveSupportSlugs);
+    setChannelCooldowns(initialCooldowns);
     setIsBatchRunning(true);
   };
 
@@ -366,6 +402,9 @@ export function useSupportBot({ channels, settings, setChannels, kickUsername }:
       const filtered = prev.filter((s) => s !== slug);
       return [slug, ...filtered];
     });
+
+    // Reset individual cooldown to 0 to prevent scheduled trigger since we are running it now
+    setChannelCooldowns((prev) => ({ ...prev, [slug]: -1 }));
 
     if (!isBatchRunning) {
       setIsBatchRunning(true);
@@ -384,6 +423,8 @@ export function useSupportBot({ channels, settings, setChannels, kickUsername }:
 
     const unlistenPromise = listen<string>("support-window-closed", (event) => {
       if (!active) return;
+      // Ignore close events triggered by reopening the window for the next channel
+      if (ignoringCloseRef.current) return;
       const closedLabel = event.payload;
       if (closedLabel === "support-worker") {
         setCurrentSlug((current) => {
@@ -456,15 +497,7 @@ export function useSupportBot({ channels, settings, setChannels, kickUsername }:
     };
   }, []);
 
-  // Sync active support slugs greetings
-  useEffect(() => {
-    const currentGreetings = sentGreetingsRef.current;
-    for (const slug of Array.from(currentGreetings)) {
-      if (!activeSupportSlugs.includes(slug)) {
-        currentGreetings.delete(slug);
-      }
-    }
-  }, [JSON.stringify(activeSupportSlugs)]);
+
 
   // Safety interval countdown loop
   useEffect(() => {
@@ -501,6 +534,28 @@ export function useSupportBot({ channels, settings, setChannels, kickUsername }:
         return;
       }
 
+      // Avoid excess: check if own live is active
+      if (kickUsername) {
+        try {
+          const payload = await invoke<{ isLive: boolean }>("fetch_kick_channel", {
+            slug: kickUsername,
+          });
+          if (payload.isLive) {
+            addLog("INFO", `Envio suspenso para ${nextSlug}: Sua live (${kickUsername}) está ativa.`);
+            const intervalMinutes = channel?.supportConfig?.intervalMinutes ?? settingsRef.current.supportIntervalMinutes;
+            const nextCd = calculateJitteredCooldown(intervalMinutes);
+            setChannelCooldowns((prev) => ({
+              ...prev,
+              [nextSlug]: nextCd,
+            }));
+            setCurrentSlug(null);
+            return;
+          }
+        } catch (err) {
+          console.error("Erro ao verificar status da própria live:", err);
+        }
+      }
+
       addLog("INFO", `Iniciando envio para ${nextSlug}...`);
       setChannelSupportStatuses((prev) => ({ ...prev, [nextSlug]: "sending" }));
 
@@ -524,48 +579,29 @@ export function useSupportBot({ channels, settings, setChannels, kickUsername }:
 
       let messagesToSend: string[] = [];
       if (settingsRef.current.useGlobalHumanMessages) {
-        const hasSentGreeting = sentGreetingsRef.current.has(nextSlug);
-        const greetingTpl = settingsRef.current.greetingTemplate || "Salve {channel}, bora que bora!";
         const humanMsgs = settingsRef.current.globalSupportMessages && settingsRef.current.globalSupportMessages.length > 0
           ? settingsRef.current.globalSupportMessages
           : ["No apoio!"];
         const displayCh = channel.username || nextSlug;
 
-        if (!hasSentGreeting) {
-          const h = new Date().getHours();
-          const timeOfDay = h < 12 ? "Bom dia" : h < 18 ? "Boa tarde" : "Boa noite";
-          const days = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
-          let greeting = greetingTpl
-            .replace(/{timeOfDay}/g, timeOfDay)
-            .replace(/{channel}/g, displayCh)
-            .replace(/{dayOfWeek}/g, days[new Date().getDay()]);
-          
-          // Force channel name inclusion
-          if (!greeting.includes(displayCh)) {
-            greeting = greeting + " (" + displayCh + ")";
-          }
-          messagesToSend = [greeting];
-          sentGreetingsRef.current.add(nextSlug);
-        } else {
-          // Select a unique message for this cycle
-          const unusedMsgs = humanMsgs.filter((msg) => !usedMessagesInBatchRef.current.has(msg));
-          const listToPick = unusedMsgs.length > 0 ? unusedMsgs : humanMsgs;
-          
-          if (unusedMsgs.length === 0) {
-            usedMessagesInBatchRef.current.clear();
-          }
-
-          let randomRaw = listToPick[Math.floor(Math.random() * listToPick.length)];
-          usedMessagesInBatchRef.current.add(randomRaw);
-
-          // Force channel name inclusion
-          if (!randomRaw.includes("{channel}")) {
-            randomRaw = randomRaw + ", {channel}!";
-          }
-
-          const randomMsg = randomRaw.replace(/{channel}/g, displayCh);
-          messagesToSend = [randomMsg];
+        // Select a unique message for this cycle
+        const unusedMsgs = humanMsgs.filter((msg) => !usedMessagesInBatchRef.current.has(msg));
+        const listToPick = unusedMsgs.length > 0 ? unusedMsgs : humanMsgs;
+        
+        if (unusedMsgs.length === 0) {
+          usedMessagesInBatchRef.current.clear();
         }
+
+        let randomRaw = listToPick[Math.floor(Math.random() * listToPick.length)];
+        usedMessagesInBatchRef.current.add(randomRaw);
+
+        // Force channel name inclusion
+        if (!randomRaw.includes("{channel}")) {
+          randomRaw = randomRaw + ", {channel}!";
+        }
+
+        const randomMsg = randomRaw.replace(/{channel}/g, displayCh);
+        messagesToSend = [randomMsg];
       } else {
         const supportConfig = channel.supportConfig || { messages: [], nextMessageIndex: 0 };
         const rawMessages = supportConfig.messages && supportConfig.messages.length > 0
@@ -594,6 +630,15 @@ export function useSupportBot({ channels, settings, setChannels, kickUsername }:
           messagesToSend = [rawMessages[0]];
         }
       }
+
+      // Substituir placeholders {channel} e {timeOfDay} em todas as mensagens
+      const displayCh = channel.username || nextSlug;
+      const timeOfDayGreeting = getTimeOfDayGreeting();
+      messagesToSend = messagesToSend.map((msg) =>
+        msg
+          .replace(/{channel}/g, displayCh)
+          .replace(/{timeOfDay}/g, timeOfDayGreeting)
+      );
 
       const allSlugs = channelsRef.current.map((c) => c.slug);
       let resolvedEmoteMap: Record<string, string> = {};
@@ -625,7 +670,10 @@ export function useSupportBot({ channels, settings, setChannels, kickUsername }:
           handleTimeout(nextSlug);
         }, 35000);
 
+        // Suppress the close event from the previous window being replaced
+        ignoringCloseRef.current = true;
         await invoke("open_support_window", { slug: nextSlug, jsScript: js_script });
+        ignoringCloseRef.current = false;
       } catch (err) {
         addLog("ERRO", `Falha ao abrir webview para ${nextSlug}: ${err}`);
         handleChannelFinished(nextSlug, false, String(err));
@@ -640,36 +688,70 @@ export function useSupportBot({ channels, settings, setChannels, kickUsername }:
     if (isBatchRunning && currentSlug === null && batchQueue.length === 0 && intervalRemaining <= 0) {
       setIsBatchRunning(false);
       addLog("FIM", "Ciclo de envios finalizado para os canais online.");
-      const cdSecs = settingsRef.current.supportIntervalMinutes * 60;
-      setCooldownTime(cdSecs);
-      addLog("COOLDOWN", `Entrando em cooldown de ${settingsRef.current.supportIntervalMinutes} minutos.`);
     }
   }, [isBatchRunning, currentSlug, batchQueue.length, intervalRemaining]);
 
-  // Cooldown countdown loop
+  // Individual channel cooldowns countdown loop
   useEffect(() => {
+    addLog("INFO", `[Debug Loop] Inicializado. supportBotEnabled: ${settings.supportBotEnabled}`);
     if (!settings.supportBotEnabled) {
-      setCooldownTime(0);
-      return;
-    }
-
-    if (cooldownTime <= 0) {
+      addLog("INFO", "[Debug Loop] Parado: Robô global está desativado.");
+      setChannelCooldowns({});
       return;
     }
 
     const interval = setInterval(() => {
-      setCooldownTime((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          void triggerBatchCycle();
-          return 0;
-        }
-        return prev - 1;
+      setChannelCooldowns((prev) => {
+        const next = { ...prev };
+        let updated = false;
+
+        addLog("INFO", `[Debug Loop] Monitorando canais. Total no state: ${channelsRef.current.length}`);
+
+        channelsRef.current.forEach((channel) => {
+          const slug = channel.slug;
+          const isLive = channel.status === "live";
+          const isSupported = channel.supportEnabled === true;
+          
+          addLog("INFO", `[Debug Loop] Canal ${slug} | Online: ${isLive} | Apoio Ativo: ${isSupported}`);
+
+          if (isLive && isSupported) {
+            const currentCooldown = next[slug] !== undefined ? next[slug] : -1;
+            addLog("INFO", `[Debug Loop] Canal ${slug} cooldown atual: ${currentCooldown}`);
+
+            if (currentCooldown > 0) {
+              next[slug] = currentCooldown - 1;
+              updated = true;
+            } else if (currentCooldown === 0) {
+              addLog("INFO", `[Debug Loop] Canal ${slug} atingiu 0! Disparando envio.`);
+              next[slug] = -1; // Mark as triggered/idle
+              updated = true;
+              void triggerChannelSupport(slug);
+            } else if (currentCooldown === -1) {
+              const intervalMinutes = channel?.supportConfig?.intervalMinutes ?? settingsRef.current.supportIntervalMinutes;
+              const nextCd = calculateJitteredCooldown(intervalMinutes);
+              addLog("INFO", `[Debug Loop] Canal ${slug} inicializando cooldown com Jitter: ${nextCd}s.`);
+              next[slug] = nextCd;
+              updated = true;
+            }
+          } else {
+            // Clean up cooldown for offline or disabled channels
+            if (next[channel.slug] !== undefined) {
+              addLog("INFO", `[Debug Loop] Canal ${slug} não está qualificado (Offline/Desabilitado). Limpando cooldown.`);
+              delete next[channel.slug];
+              updated = true;
+            }
+          }
+        });
+
+        return updated ? next : prev;
       });
     }, 1000);
 
-    return () => clearInterval(interval);
-  }, [cooldownTime, settings.supportBotEnabled]);
+    return () => {
+      addLog("INFO", "[Debug Loop] Limpando intervalo do Loop.");
+      clearInterval(interval);
+    };
+  }, [settings.supportBotEnabled]);
 
   // Global bot enabled/disabled observer
   useEffect(() => {
@@ -683,6 +765,7 @@ export function useSupportBot({ channels, settings, setChannels, kickUsername }:
       setCooldownTime(0);
       setIntervalRemaining(0);
       setChannelSupportStatuses({});
+      setChannelCooldowns({});
       if (timeoutRef.current) {
         window.clearTimeout(timeoutRef.current);
         timeoutRef.current = null;
@@ -701,6 +784,7 @@ export function useSupportBot({ channels, settings, setChannels, kickUsername }:
     clearLogs,
     activeSupportSlugs,
     triggerManualMessage,
+    channelCooldowns,
   };
 }
 
@@ -714,4 +798,15 @@ export function formatCountdown(seconds: number): string {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+}
+
+export function getTimeOfDayGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 12) {
+    return "Bom dia";
+  } else if (hour >= 12 && hour < 18) {
+    return "Boa tarde";
+  } else {
+    return "Boa noite";
+  }
 }

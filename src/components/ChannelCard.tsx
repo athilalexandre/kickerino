@@ -17,6 +17,7 @@ type ChannelCardProps = {
   onToggleSupport?: (slug: string) => void;
   onUpdateSupportConfig?: (slug: string, config: Partial<ChannelSupportConfig>) => void;
   globalIntervalMinutes?: number;
+  cooldownSeconds?: number;
 };
 
 export function ChannelCard({
@@ -30,9 +31,9 @@ export function ChannelCard({
   onToggleSupport,
   onUpdateSupportConfig,
   globalIntervalMinutes,
+  cooldownSeconds,
 }: ChannelCardProps) {
   const [isConfigPanelOpen, setIsConfigPanelOpen] = useState(false);
-  const [newMessageText, setNewMessageText] = useState("");
 
   const displayName = channel.username ?? channel.slug;
   const stats =
@@ -41,55 +42,11 @@ export function ChannelCard({
       : channel.errorMessage ?? "Aguardando proxima checagem";
 
   const supportConfig = channel.supportConfig || { messages: [], nextMessageIndex: 0 };
-  const messages = supportConfig.messages || [];
-
-  const handleAddMessage = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMessageText.trim()) return;
-
-    const updatedMessages = [...messages, newMessageText.trim()];
-    if (onUpdateSupportConfig) {
-      onUpdateSupportConfig(channel.slug, { messages: updatedMessages });
-    }
-    setNewMessageText("");
-  };
-
-  const handleRemoveMessage = (indexToRemove: number) => {
-    const updatedMessages = messages.filter((_, idx) => idx !== indexToRemove);
-    let nextIdx = supportConfig.nextMessageIndex;
-    if (nextIdx >= updatedMessages.length) {
-      nextIdx = 0;
-    }
-    if (onUpdateSupportConfig) {
-      onUpdateSupportConfig(channel.slug, {
-        messages: updatedMessages,
-        nextMessageIndex: nextIdx,
-      });
-    }
-  };
 
   const handleIntervalChange = (val: string) => {
     const min = val === "" ? undefined : Math.max(1, parseInt(val, 10));
     if (onUpdateSupportConfig) {
       onUpdateSupportConfig(channel.slug, { intervalMinutes: min });
-    }
-  };
-
-  const handleRotateMessagesChange = (checked: boolean) => {
-    if (onUpdateSupportConfig) {
-      onUpdateSupportConfig(channel.slug, {
-        rotateMessages: checked,
-        sendAllAtOnce: checked ? false : supportConfig.sendAllAtOnce,
-      });
-    }
-  };
-
-  const handleSendAllAtOnceChange = (checked: boolean) => {
-    if (onUpdateSupportConfig) {
-      onUpdateSupportConfig(channel.slug, {
-        sendAllAtOnce: checked,
-        rotateMessages: checked ? false : supportConfig.rotateMessages,
-      });
     }
   };
 
@@ -113,33 +70,63 @@ export function ChannelCard({
             <span className="channel-card__topline">
               <strong>{displayName}</strong>
               <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                {isSupported && sendingStatus && (
-                  <span 
-                    title={`Status de envio: ${sendingStatus}`} 
-                    style={{ 
-                      display: "inline-flex", 
-                      alignItems: "center", 
-                      gap: "4px",
-                      fontSize: "11px",
-                      color: sendingStatus === "sent" ? "#42c773" : 
-                             sendingStatus === "failed" ? "#dc5d57" :
-                             sendingStatus === "sending" ? "#3b82f6" : "#8fa1a8",
-                      fontWeight: "bold",
-                      background: sendingStatus === "sent" ? "rgba(66, 199, 115, 0.1)" :
-                                  sendingStatus === "failed" ? "rgba(220, 93, 87, 0.1)" :
-                                  sendingStatus === "sending" ? "rgba(59, 130, 246, 0.1)" : "rgba(143, 161, 168, 0.1)",
-                      padding: "2px 6px",
-                      borderRadius: "4px"
-                    }}
-                  >
-                    <Bot size={13} />
-                    <span>
-                      {sendingStatus === "sent" ? "Enviada" :
-                       sendingStatus === "failed" ? "Falhou" :
-                       sendingStatus === "sending" ? "Enviando..." : "Pendente"}
+                {isSupported && (() => {
+                  const hasCooldown = cooldownSeconds !== undefined && cooldownSeconds > 0;
+                  let badgeColor = "#3b82f6"; // Pendente (Azul)
+                  let badgeBg = "rgba(59, 130, 246, 0.1)";
+
+                  if (sendingStatus === "sending") {
+                    badgeColor = "#3b82f6"; // Azul
+                    badgeBg = "rgba(59, 130, 246, 0.1)";
+                  } else if (hasCooldown) {
+                    if (sendingStatus === "failed") {
+                      badgeColor = "#dc5d57"; // Vermelho
+                      badgeBg = "rgba(220, 93, 87, 0.1)";
+                    } else if (sendingStatus === "sent") {
+                      badgeColor = "#eab308"; // Amarelo (Em Fila)
+                      badgeBg = "rgba(234, 179, 8, 0.1)";
+                    } else {
+                      badgeColor = "#3b82f6"; // Azul (Pendente)
+                      badgeBg = "rgba(59, 130, 246, 0.1)";
+                    }
+                  } else {
+                    if (sendingStatus === "sent") {
+                      badgeColor = "#42c773"; // Verde (Enviada)
+                      badgeBg = "rgba(66, 199, 115, 0.1)";
+                    } else if (sendingStatus === "failed") {
+                      badgeColor = "#dc5d57"; // Vermelho
+                      badgeBg = "rgba(220, 93, 87, 0.1)";
+                    } else {
+                      badgeColor = "#3b82f6"; // Azul (Pendente)
+                      badgeBg = "rgba(59, 130, 246, 0.1)";
+                    }
+                  }
+
+                  return (
+                    <span 
+                      title={`Status de envio: ${sendingStatus || "pending"}`} 
+                      style={{ 
+                        display: "inline-flex", 
+                        alignItems: "center", 
+                        gap: "4px",
+                        fontSize: "11px",
+                        color: badgeColor,
+                        fontWeight: "bold",
+                        background: badgeBg,
+                        padding: "2px 6px",
+                        borderRadius: "6px"
+                      }}
+                    >
+                      <Bot size={13} />
+                      <span>
+                        {sendingStatus === "sending" ? "Enviando..." :
+                         cooldownSeconds !== undefined && cooldownSeconds > 0 ? `${sendingStatus === "sent" ? "Em fila" : sendingStatus === "failed" ? "Falhou" : "Pendente"} (${formatCountdown(cooldownSeconds)})` :
+                         sendingStatus === "sent" ? "Enviada" :
+                         sendingStatus === "failed" ? "Falhou" : "Pendente"}
+                      </span>
                     </span>
-                  </span>
-                )}
+                  );
+                })()}
                 <StatusBadge status={channel.status} />
               </span>
             </span>
@@ -220,63 +207,6 @@ export function ChannelCard({
                 onChange={(e) => handleIntervalChange(e.currentTarget.value)}
               />
             </label>
-
-            <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", marginTop: "4px" }}>
-              <label className="channel-card__config-checkbox">
-                <input
-                  type="checkbox"
-                  checked={!!supportConfig.rotateMessages}
-                  onChange={(e) => handleRotateMessagesChange(e.currentTarget.checked)}
-                />
-                <span>Mensagens intercaladas</span>
-              </label>
-
-              <label className="channel-card__config-checkbox">
-                <input
-                  type="checkbox"
-                  checked={!!supportConfig.sendAllAtOnce}
-                  onChange={(e) => handleSendAllAtOnceChange(e.currentTarget.checked)}
-                />
-                <span>Enviar todas de uma vez</span>
-              </label>
-            </div>
-          </div>
-
-          <div className="channel-card__messages-section">
-            <label style={{ fontSize: "11px", fontWeight: "bold", color: "#a2b4b9" }}>
-              Mensagens ({messages.length})
-            </label>
-
-            {messages.length > 0 && (
-              <div className="channel-card__messages-list">
-                {messages.map((msg, idx) => (
-                  <div key={idx} className="channel-card__message-item">
-                    <span className="channel-card__message-text">{msg}</span>
-                    <button
-                      type="button"
-                      className="channel-card__message-remove"
-                      onClick={() => handleRemoveMessage(idx)}
-                      title="Excluir mensagem"
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <form onSubmit={handleAddMessage} className="channel-card__message-form">
-              <input
-                type="text"
-                className="channel-card__message-input"
-                placeholder="Mensagem (emotes separados por espaço)"
-                value={newMessageText}
-                onChange={(e) => setNewMessageText(e.currentTarget.value)}
-              />
-              <button type="submit" className="channel-card__message-add-btn">
-                <Plus size={14} /> Adicionar
-              </button>
-            </form>
           </div>
         </div>
       )}
