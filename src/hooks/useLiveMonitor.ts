@@ -96,6 +96,10 @@ export function useLiveMonitor({
             liveTransitions.push(next);
             notifiedLiveSlugsRef.current.add(next.slug);
           }
+          // Se o robô geral estiver ligado, ativa o apoio individual deste canal automaticamente
+          if (settingsRef.current.supportBotEnabled) {
+            next.supportEnabled = true;
+          }
         } else if (next.status === "offline") {
           // If offline, remove from notified set so we can notify again when they go live next time
           notifiedLiveSlugsRef.current.delete(next.slug);

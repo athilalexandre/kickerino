@@ -11,7 +11,7 @@ export const defaultSettings: AppSettings = {
   openLiveOnDoubleClick: true,
   supportBotEnabled: false,
   supportIntervalMinutes: 10,
-  supportMessagesText: "crisjuliano:: No apoio\nsche:: much fish, takes love!",
+  supportMessagesText: "",
   supportPreferredQuality: "160p",
   supportQualityCheckSeconds: 60,
   useGlobalHumanMessages: true,
