@@ -777,13 +777,25 @@ fn delete_missxss_api_key(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn fetch_missxss_watch_time(app: AppHandle, platform: String, username: String) -> Result<serde_json::Value, String> {
+async fn fetch_missxss_watch_time(
+    app: AppHandle,
+    platform: String,
+    username: String,
+    date_from: Option<String>,
+    date_to: Option<String>,
+) -> Result<serde_json::Value, String> {
     let api_key = get_effective_api_key(&app)?;
 
     let client = reqwest::Client::new();
     let mut body = serde_json::Map::new();
     body.insert("platform".to_string(), serde_json::Value::String(platform));
     body.insert("username".to_string(), serde_json::Value::String(username));
+    if let Some(df) = date_from {
+        body.insert("date_from".to_string(), serde_json::Value::String(df));
+    }
+    if let Some(dt) = date_to {
+        body.insert("date_to".to_string(), serde_json::Value::String(dt));
+    }
 
     let response = client
         .post("https://api.missxss.com.tr/v1/get-watch-time")
@@ -811,6 +823,7 @@ async fn fetch_missxss_watch_time(app: AppHandle, platform: String, username: St
 async fn fetch_missxss_top_watch_time(
     app: AppHandle,
     limit: Option<u32>,
+    offset: Option<u32>,
     platform: Option<String>,
     date_from: Option<String>,
     date_to: Option<String>,
@@ -823,6 +836,9 @@ async fn fetch_missxss_top_watch_time(
     
     if let Some(l) = limit {
         body.insert("limit".to_string(), serde_json::Value::Number(l.into()));
+    }
+    if let Some(o) = offset {
+        body.insert("offset".to_string(), serde_json::Value::Number(o.into()));
     }
     if let Some(p) = platform {
         body.insert("platform".to_string(), serde_json::Value::String(p));

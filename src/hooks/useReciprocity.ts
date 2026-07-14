@@ -96,9 +96,14 @@ export function useReciprocity({ channels, kickUsername, kickLoginStatus }: UseR
     // 1. Fetch chatted (messageCount) from MissXss
     let chatted = false;
     try {
+      const dateTo = new Date().toISOString().split("T")[0];
+      const dateFrom = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+
       const missxssRes = await invoke<any>("fetch_missxss_watch_time", {
         platform: "Kick",
         username: target.slug,
+        dateFrom,
+        dateTo,
       });
       if (missxssRes) {
         const msgCount = Number(missxssRes.message_count ?? missxssRes.messageCount ?? missxssRes.messages ?? 0);
@@ -157,24 +162,68 @@ export function useReciprocity({ channels, kickUsername, kickLoginStatus }: UseR
         return;
       }
 
-      // 1. Fetch chat statuses from MissXss (parallel, each is a fast individual call)
+      // 1. Fetch chat statuses from MissXss in batch (last 7 days activity)
       const chattedMap: Record<string, boolean> = {};
-      await Promise.all(
-        channels.map(async (c) => {
-          try {
-            const missxssRes = await invoke<any>("fetch_missxss_watch_time", {
-              platform: "Kick",
-              username: c.slug,
-            });
-            if (missxssRes) {
-              const msgCount = Number(missxssRes.message_count ?? missxssRes.messageCount ?? missxssRes.messages ?? 0);
-              chattedMap[c.slug.toLowerCase()] = msgCount > 0;
+      try {
+        const dateTo = new Date().toISOString().split("T")[0];
+        const dateFrom = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+        
+        let offset = 0;
+        let hasMore = true;
+        
+        while (hasMore && offset < 500) {
+          const topRes = await invoke<any>("fetch_missxss_top_watch_time", {
+            limit: 100,
+            offset,
+            platform: "Kick",
+            dateFrom,
+            dateTo,
+          });
+          
+          let activeUsers: any[] = [];
+          if (Array.isArray(topRes)) {
+            activeUsers = topRes;
+          } else if (topRes && typeof topRes === "object") {
+            const possibleArrays = [topRes.data, topRes.users, topRes.list, topRes.results, topRes.viewers];
+            for (const arr of possibleArrays) {
+              if (Array.isArray(arr)) {
+                activeUsers = arr;
+                break;
+              }
             }
-          } catch (e) {
-            console.warn(`[Reciprocity] Erro MissXss para ${c.slug}:`, e);
+            if (activeUsers.length === 0) {
+              for (const key of Object.keys(topRes)) {
+                if (Array.isArray(topRes[key])) {
+                  activeUsers = topRes[key];
+                  break;
+                }
+              }
+            }
           }
-        })
-      );
+          
+          if (activeUsers.length === 0) {
+            hasMore = false;
+          } else {
+            for (const userObj of activeUsers) {
+              if (!userObj || typeof userObj !== "object") continue;
+              const username = (userObj.username ?? userObj.user ?? userObj.slug ?? userObj.display_name ?? userObj.displayName ?? "") as string;
+              if (!username) continue;
+              const msgCount = Number(userObj.message_count ?? userObj.messageCount ?? userObj.messages ?? userObj.message_cnt ?? 0);
+              if (msgCount > 0) {
+                chattedMap[username.toLowerCase()] = true;
+              }
+            }
+            
+            if (activeUsers.length < 100) {
+              hasMore = false;
+            } else {
+              offset += 100;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[Reciprocity] Erro ao buscar lista de atividade de chat na MissXss:", e);
+      }
 
       // 2. Fetch relationship statuses from Kick in batches of 10
       const BATCH_SIZE = 10;
@@ -205,7 +254,7 @@ export function useReciprocity({ channels, kickUsername, kickLoginStatus }: UseR
       setReciprocityData((prev) => {
         const updated = prev.map((item) => {
           const lowerUser = item.username.toLowerCase();
-          const chatted = chattedMap[lowerUser] ?? item.chatted;
+          const chatted = chattedMap[lowerUser] ?? false; // Batch checking is absolute for the last 7 days
           const rel = relationMap[lowerUser];
           return {
             ...item,

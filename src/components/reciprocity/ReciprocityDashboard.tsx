@@ -168,7 +168,7 @@ export function ReciprocityDashboard({
         <div className="info-badge" style={{ display: "flex", alignItems: "center", gap: "8px", background: "transparent", border: "none", color: "#8fa1a8", fontSize: "13px" }}>
           <Info size={16} style={{ color: "#75e39b", flexShrink: 0 }} />
           <span>
-            <strong>Critério de Reciprocidade:</strong> O canal de apoio deve ter enviado pelo menos 1 mensagem no seu chat <strong>E</strong> ser seguidor ou sub do seu canal.
+            <strong>Critério de Reciprocidade:</strong> O canal de apoio deve ter enviado pelo menos 1 mensagem no seu chat nos últimos 7 dias <strong>E</strong> ser seguidor ou sub do seu canal.
           </span>
         </div>
       </div>
