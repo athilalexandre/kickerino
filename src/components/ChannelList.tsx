@@ -1,4 +1,5 @@
-import { Bot, Plus, RefreshCcw } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+import { Bot, FileDown, Plus, RefreshCcw } from "lucide-react";
 import { FormEvent, useState } from "react";
 import type { KickChannel } from "../types/channel";
 import { ChannelAvatar } from "./ChannelAvatar";
@@ -144,10 +145,23 @@ export function ChannelList({
       </div>
 
 
-      <button className="refresh-button" type="button" onClick={onRefresh} disabled={isChecking}>
-        <RefreshCcw size={17} className={isChecking ? "spin" : ""} />
-        <span>{isChecking ? "Checando" : "Atualizar"}</span>
-      </button>
+      <div className="sidebar-footer">
+        <button className="refresh-button" type="button" onClick={onRefresh} disabled={isChecking}>
+          <RefreshCcw size={17} className={isChecking ? "spin" : ""} />
+          <span>{isChecking ? "Checando" : "Atualizar"}</span>
+        </button>
+        <button
+          className="refresh-button"
+          type="button"
+          title="Exportar lista de canais (.txt)"
+          onClick={() => {
+            const text = channels.map((c) => c.slug).join("\n");
+            void invoke("export_channels_txt", { content: text });
+          }}
+        >
+          <FileDown size={17} />
+        </button>
+      </div>
     </aside>
   );
 }

@@ -1099,6 +1099,24 @@ async fn install_update(app: AppHandle, url: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn export_channels_txt(content: String) -> Result<bool, String> {
+    let path = rfd::FileDialog::new()
+        .set_title("Exportar canais")
+        .set_file_name("canais_kickerino.txt")
+        .add_filter("Arquivo de Texto", &["txt"])
+        .save_file();
+
+    match path {
+        Some(path) => {
+            std::fs::write(&path, &content)
+                .map_err(|e| format!("Falha ao salvar arquivo: {e}"))?;
+            Ok(true)
+        }
+        None => Ok(false),
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -1130,7 +1148,8 @@ pub fn run() {
             delete_missxss_api_key,
             install_update,
             select_sound_file,
-            play_sound_rust
+            play_sound_rust,
+            export_channels_txt
         ])
         .run(tauri::generate_context!())
         .expect("erro ao iniciar o Kickerino");

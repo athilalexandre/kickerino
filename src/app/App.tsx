@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Bot, Download, FileDown, RefreshCcw, Settings, UserCheck, UserX, Wifi, HelpCircle } from "lucide-react";
+import { Bot, Download, RefreshCcw, Settings, UserCheck, UserX, Wifi, HelpCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { ChannelCard } from "../components/ChannelCard";
 import { ChannelList } from "../components/ChannelList";
@@ -365,45 +365,6 @@ export function App() {
         {settingsOpen && (
           <div style={{ gridColumn: "1 / -1" }}>
             <SettingsPanel settings={settings} onChange={handleSettingsChange} />
-            <button
-              type="button"
-              className="export-channels-btn"
-              onClick={() => {
-                const text = sortedChannels.map((c) => c.slug).join("\n");
-                const blob = new Blob([text], { type: "text/plain" });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = "canais_kickerino.txt";
-                a.click();
-                URL.revokeObjectURL(url);
-              }}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "6px",
-                marginBottom: "14px",
-                padding: "7px 14px",
-                border: "1px solid #28343a",
-                borderRadius: "8px",
-                background: "#151b1f",
-                color: "#b5c8cf",
-                fontSize: "13px",
-                cursor: "pointer",
-                transition: "all 150ms ease",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = "#3abe68";
-                e.currentTarget.style.color = "#eefef3";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = "#28343a";
-                e.currentTarget.style.color = "#b5c8cf";
-              }}
-            >
-              <FileDown size={15} />
-              Exportar Canais (.txt)
-            </button>
           </div>
         )}
         {currentTab === "monitor" ? (

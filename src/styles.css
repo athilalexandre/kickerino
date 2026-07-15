@@ -259,6 +259,15 @@ button {
   opacity: 0.72;
 }
 
+.sidebar-footer {
+  display: flex;
+  gap: 8px;
+}
+
+.sidebar-footer .refresh-button:first-child {
+  flex: 1;
+}
+
 .content {
   min-width: 0;
   min-height: 0;
